@@ -46,7 +46,7 @@ FABRIC only allows 4000-4094 on `AmLight-EXP-Layer2-FIU`, so the weave takes a V
 | `public` | the public uplink (e.g. `67.17.206.74`) | transfers with Cape Town before the VLAN is mapped, and the "before" picture |
 
 You can also switch it live from the demo UI (**Data via VLAN** / **Data via public**), or on the DTN with
-`sudo globus-dtn-data-path vlan|public|show`. The switch updates the GCS node and restarts GridFTP, so the
+`sudo /usr/local/sbin/globus-dtn-data-path vlan|public|show` (full path: `sudo` on Rocky does not search `/usr/local/sbin`). The switch updates the GCS node and restarts GridFTP, so the
 next transfer uses the new address. Run the same transfer once with each setting to show the before/after:
 red public line, then green VLAN line.
 
@@ -81,9 +81,9 @@ doesn't block the other. Status, extend and stop only touch the selected sites.
    `*_PUBLIC_GW`, the gateway defaults to the first usable address. The weave checks that the outside world sees
    these addresses (no NAT). CIEN uses FABnetv4Ext (`CIEN_PUBLIC=ext`).
 4. **FABRIC project tags.** You need `Net.FacilityPort.<port>` (or `Net.AllFacilityPorts`), `Net.FABNetv4Ext` for
-   `ext`, and `VM.NoLimit*` for the default VM size. The weave uses the project your FABRIC token is for
-   (LoomAI's selected project); set `CRYOEM_PROJECT_ID` to force another. It prints the project at the start
-   and warns if one of these tags is missing.
+   `ext`, and `VM.NoLimit*` for the default VM size. The weave and notebook use the default FABRIC
+   config, token and project as set in `fabric_rc` / LoomAI's Configure view, and never override them. The
+   weave prints the project at the start and warns if one of these tags is missing.
 5. **Switch mapping.** Have the FABRIC VLAN the weave picked at FIU mapped to VLAN 1400 toward Cape Town.
 6. **Cape Town collection.** The demo identity needs R/W on collection `35df6f87-df63-11f1-977e-02ffe3faed53`.
 

@@ -376,14 +376,21 @@ def build_dtn(fablib, cfg: dict, site: str, name: str, prev_leg: dict) -> dict:
 def configure_dtn(fablib, cfg: dict, site: str, name: str, ports: dict) -> dict:
     """Configure the DTN, then (whatever stage it reached) install the demo web UI."""
     info = _configure_dtn(fablib, cfg, site, name, ports)
-    if cfg["demo_ui"] and "data_ip" in info:
-        deploy_ui(fablib, cfg, site, name, info)
+    if "data_ip" in info:
+        n = fablib.get_slice(name=name).get_node(name=NODE)
+        write_demo_conf(n, cfg, site, info)
+        if cfg["demo_ui"]:
+            try:
+                deploy_ui(n, cfg, site, info)
+            except Exception as exc:          # the DTN and endpoint are fine without the UI
+                say(f"{site}: WARNING — demo web UI not installed ({str(exc).splitlines()[0]}); "
+                    "re-run start to retry. The notebook works without it.")
     return info
 
 
-def deploy_ui(fablib, cfg: dict, site: str, name: str, info: dict) -> None:
-    """Globus path demo UI on the DTN, 127.0.0.1 only; prints the SSH tunnel command."""
-    n = fablib.get_slice(name=name).get_node(name=NODE)
+def write_demo_conf(n, cfg: dict, site: str, info: dict) -> None:
+    """/etc/globus-dtn/demo.json and the data-path switch (globus-dtn-data-path), which the
+    notebook and the web UI both use - installed whether or not the UI is."""
     users = cfg["users"] or info.get("users") or {}
     demo = {k: info.get(k) for k in ("site", "data_ip", "data_dev", "peer_ip", "mtu", "public_ip",
                                      "public_ip6", "collection_id", "l2_fp", "l2_vlan")}
@@ -395,6 +402,12 @@ def deploy_ui(fablib, cfg: dict, site: str, name: str, info: dict) -> None:
     with open(path, "w") as fh:
         json.dump(demo, fh, indent=2)
     n.upload_file(path, "demo.json")
+    n.execute(f"sudo install -d -m 0755 {STATE_DIR} && sudo install -m 0644 demo.json {STATE_DIR}/demo.json && "
+              "sudo install -m 0755 tools/set_data_path.sh /usr/local/sbin/globus-dtn-data-path", quiet=True)
+
+
+def deploy_ui(n, cfg: dict, site: str, info: dict) -> None:
+    """Globus path demo UI on the DTN, 127.0.0.1 only; prints the SSH tunnel command."""
     say(f"{site}: installing the demo web UI (127.0.0.1:{cfg['demo_port']} on the DTN)...")
     run(n, f"sudo bash tools/setup_demo_ui.sh --conf demo.json --user {n.get_username()} "
            f"--port {cfg['demo_port']}")
@@ -595,8 +608,7 @@ def check_tags(cfg: dict, proj: dict) -> None:
     missing = sorted(need - tags)
     if missing:
         say(f"WARNING — project {proj.get('name', '?')} lacks {', '.join(missing)}; FABRIC will refuse the "
-            "slice. Switch to a project that has them (LoomAI: Configure > project, then refresh the token), "
-            "or set CRYOEM_PROJECT_ID.")
+            "slice. Switch the default FABRIC project to one that has them (LoomAI: Configure).")
 
 
 def start(prefix: str) -> None:
@@ -646,6 +658,8 @@ def start(prefix: str) -> None:
             f"Globus {leg.get('globus', '-')}")
         if leg.get("collection_id"):
             say(f"{site}: collection https://app.globus.org/file-manager?origin_id={leg['collection_id']}")
+        for line in app_access(leg):
+            say(f"{site}: {line}")
     if ok:
         say("Next: open globus_transfer_demo.ipynb.")
     sys.exit(0 if ok else 1)
@@ -665,6 +679,30 @@ def status(prefix: str) -> None:
             out, _ = n.execute(f"ip route get {leg['peer_ip']} | head -1; "
                                f"ping -c 3 -W 2 {leg['peer_ip']} | tail -2", quiet=True)
             print(out)
+        for line in app_access(leg):
+            print(f"{site}: {line}")
+
+
+def app_access(leg: dict, port: int | None = None) -> list:
+    """How to open the demo web app (it listens on 127.0.0.1 on the DTN only)."""
+    port = port or int(env("DEMO_UI_PORT", "8080"))
+    lines = [f"demo app - LoomAI: Tunnels > slice {leg.get('slice')}, node {leg.get('node', NODE)}, "
+             f"port {port}, then open the tunnel URL"]
+    if leg.get("ui_tunnel") or leg.get("ssh"):
+        tun = leg.get("ui_tunnel") or leg["ssh"].replace("ssh ", f"ssh -N -L {port}:127.0.0.1:{port} ", 1)
+        lines.append(f"demo app - from a laptop: {tun}   then open http://localhost:{port}/")
+    return lines
+
+
+def install_app(fablib, leg: dict) -> list:
+    """Install or update the demo web app on one DTN from the weave's tools/ (for the
+    notebook, or after editing the app). Returns app_access() lines."""
+    cfg = load_config()
+    n = fablib.get_slice(name=leg["slice"]).get_node(name=leg.get("node", NODE))
+    n.upload_directory(TOOLS_DIR, ".")
+    write_demo_conf(n, cfg, leg["site"], leg)
+    deploy_ui(n, cfg, leg["site"], leg)
+    return app_access(leg, cfg["demo_port"])
 
 
 def extend(prefix: str) -> None:
