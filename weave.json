@@ -1,0 +1,338 @@
+{
+  "name": "Cape Town Globus Data Path",
+  "description": "Globus Connect Server endpoints at FIU and/or CIEN whose data traffic to the SANReN Cape Town DTN runs over an L2 facility-port VLAN, while Globus reaches them on public addresses.",
+  "description_long": "Demonstrates that Globus data can be steered onto a private research path purely by where the endpoints advertise their data interface. Each DTN VM (Rocky 9, one slice per site in DTN_SITES: FIU, CIEN or both) gets a public uplink (AmLight-Layer3-FIU at FIU, FABnetv4Ext at CIEN) on which Globus Connect Server 5.4 is registered, and a data NIC bridged through an L2 facility port (AmLight-EXP-Layer2-FIU at FIU, FP2-CIEN at CIEN) onto the VLAN that reaches the Cape Town DTN; that NIC is GCS's --data-interface. FABRIC offers only VLANs 4000-4094 on AmLight-EXP-Layer2-FIU, so the weave takes a free one and reports it for the operators to map to Cape Town's VLAN 1400 on the switch. The Cape Town side runs Globus Connect Personal, which opens every data connection itself to the advertised address, so the bytes take the VLAN - for transfers submitted from the CLI or the web app alike. The weave checks the address is not already in use, reachability and jumbo frames to Cape Town, the public addresses (no NAT), firewalls the public NIC to 443 + 50000-51000, creates one mapped collection per endpoint, saves each deployment key under results/keys, writes results/legs.json and exits. globus_transfer_demo.ipynb runs transfers to and from the Cape Town collection and proves the path from the DTN's own sockets. Stop deletes each Globus endpoint before its slice, and keeps the slice if that fails.",
+  "run_script": "weave.sh",
+  "log_file": "weave.log",
+  "cleanup_script": "weave_cleanup.sh",
+  "category": "weave",
+  "format": "fabric-slice-v1",
+  "created": "2026-11-13T00:00:00Z",
+  "args": [
+    {
+      "name": "SLICE_NAME",
+      "label": "Slice name prefix",
+      "type": "string",
+      "required": true,
+      "default": "cape-globus",
+      "description": "Prefix for the slices: <prefix>-fiu, <prefix>-cien"
+    },
+    {
+      "name": "DTN_SITES",
+      "label": "DTN sites",
+      "type": "string",
+      "required": false,
+      "default": "FIU",
+      "description": "Which DTNs to provision: FIU, CIEN, or FIU,CIEN. Each site has its own slice; stop/status/extend touch only the listed sites (CIEN is offline for now)."
+    },
+    {
+      "name": "FP_BW",
+      "label": "Facility port bandwidth (Gbps)",
+      "type": "number",
+      "required": false,
+      "default": 10,
+      "description": "Bandwidth reserved on every facility port (above the project limit needs Net.NoLimitBW)"
+    },
+    {
+      "name": "FIU_PUBLIC",
+      "label": "FIU public uplink",
+      "type": "string",
+      "required": false,
+      "default": "AmLight-Layer3-FIU",
+      "description": "How Globus reaches the FIU endpoint (443): 'ext' = FABnetv4Ext, or an L3 facility port name"
+    },
+    {
+      "name": "FIU_PUBLIC_VLAN",
+      "label": "FIU public VLAN",
+      "type": "string",
+      "required": false,
+      "default": "3002",
+      "description": "VLAN AmLight assigned on AmLight-Layer3-FIU"
+    },
+    {
+      "name": "FIU_PUBLIC_ADDR",
+      "label": "FIU public address",
+      "type": "string",
+      "required": false,
+      "default": "67.17.206.74/29",
+      "description": "FIU DTN public IPv4 (CIDR) from AmLight's 67.17.206.72/29; .73 is the gateway"
+    },
+    {
+      "name": "FIU_PUBLIC_GW",
+      "label": "FIU public gateway",
+      "type": "string",
+      "required": false,
+      "default": "",
+      "description": "Blank = first usable address of the subnet (AmLight convention: 67.17.206.73)"
+    },
+    {
+      "name": "FIU_PUBLIC_ADDR6",
+      "label": "FIU public IPv6",
+      "type": "string",
+      "required": false,
+      "default": "2800:bc0:9000:3002::2/64",
+      "description": "FIU DTN public IPv6 (CIDR) from AmLight's 2800:bc0:9000:3002::/64; blank = IPv4 only"
+    },
+    {
+      "name": "FIU_PUBLIC_GW6",
+      "label": "FIU public IPv6 gateway",
+      "type": "string",
+      "required": false,
+      "default": "",
+      "description": "Blank = first usable address (2800:bc0:9000:3002::1)"
+    },
+    {
+      "name": "FIU_L2_IP",
+      "label": "FIU L2 address",
+      "type": "string",
+      "required": false,
+      "default": "10.14.0.60/24",
+      "description": "FIU DTN address on the Cape Town VLAN (Cape Town is 10.14.0.50). Refused if another host already answers for it."
+    },
+    {
+      "name": "FIU_L2_FP",
+      "label": "FIU L2 facility port",
+      "type": "string",
+      "required": false,
+      "default": "AmLight-EXP-Layer2-FIU",
+      "description": "Facility port for the FIU data path (FABRIC allows VLANs 4000-4094 on it)"
+    },
+    {
+      "name": "FIU_L2_VLAN",
+      "label": "FIU L2 VLAN",
+      "type": "string",
+      "required": false,
+      "default": "auto",
+      "description": "VLAN on FIU_L2_FP; auto = first free in 4000-4094. The operators map it to Cape Town's VLAN 1400 on the switch - the weave prints which one it took."
+    },
+    {
+      "name": "FIU_PEER_IP",
+      "label": "Cape Town IP (FIU VLAN)",
+      "type": "string",
+      "required": false,
+      "default": "10.14.0.50",
+      "description": "The Cape Town DTN's address on the FIU data VLAN"
+    },
+    {
+      "name": "FIU_HOST",
+      "label": "FIU host",
+      "type": "string",
+      "required": false,
+      "default": "",
+      "description": "Pin the FIU DTN VM to a worker, e.g. fiu-w1.fabric-testbed.net (blank = FABRIC picks)"
+    },
+    {
+      "name": "CIEN_PUBLIC",
+      "label": "CIEN public uplink",
+      "type": "string",
+      "required": false,
+      "default": "ext",
+      "description": "How Globus reaches the CIEN endpoint: 'ext' = FABnetv4Ext, or an L3 facility port name (then set CIEN_PUBLIC_ADDR/GW in the environment)"
+    },
+    {
+      "name": "CIEN_PUBLIC_VLAN",
+      "label": "CIEN public VLAN",
+      "type": "string",
+      "required": false,
+      "default": "auto",
+      "description": "Only when CIEN_PUBLIC is a facility port: its VLAN (auto = first free)"
+    },
+    {
+      "name": "CIEN_PUBLIC_ADDR",
+      "label": "CIEN public address",
+      "type": "string",
+      "required": false,
+      "default": "",
+      "description": "Only when CIEN_PUBLIC is a facility port: IPv4 CIDR"
+    },
+    {
+      "name": "CIEN_PUBLIC_GW",
+      "label": "CIEN public gateway",
+      "type": "string",
+      "required": false,
+      "default": "",
+      "description": "Blank = first usable address"
+    },
+    {
+      "name": "CIEN_PUBLIC_ADDR6",
+      "label": "CIEN public IPv6",
+      "type": "string",
+      "required": false,
+      "default": "",
+      "description": "Only when CIEN_PUBLIC is a facility port: IPv6 CIDR"
+    },
+    {
+      "name": "CIEN_PUBLIC_GW6",
+      "label": "CIEN public IPv6 gateway",
+      "type": "string",
+      "required": false,
+      "default": "",
+      "description": "Blank = first usable address"
+    },
+    {
+      "name": "CIEN_L2_IP",
+      "label": "CIEN L2 address",
+      "type": "string",
+      "required": false,
+      "default": "10.29.1.60/24",
+      "description": "CIEN DTN address on the Cape Town VLAN (Cape Town is 10.29.1.50)"
+    },
+    {
+      "name": "CIEN_L2_FP",
+      "label": "CIEN L2 facility port",
+      "type": "string",
+      "required": false,
+      "default": "FP2-CIEN",
+      "description": "Facility port for the CIEN data path"
+    },
+    {
+      "name": "CIEN_L2_VLAN",
+      "label": "CIEN L2 VLAN",
+      "type": "string",
+      "required": false,
+      "default": "2901",
+      "description": "VLAN on CIEN_L2_FP (auto = first free)"
+    },
+    {
+      "name": "CIEN_PEER_IP",
+      "label": "Cape Town IP (CIEN VLAN)",
+      "type": "string",
+      "required": false,
+      "default": "10.29.1.50",
+      "description": "The Cape Town DTN's address on the CIEN data VLAN"
+    },
+    {
+      "name": "CIEN_HOST",
+      "label": "CIEN host",
+      "type": "string",
+      "required": false,
+      "default": "",
+      "description": "Pin the CIEN DTN VM to a worker, e.g. cien-w1.fabric-testbed.net (blank = FABRIC picks)"
+    },
+    {
+      "name": "GLOBUS_USERS",
+      "label": "Globus users",
+      "type": "string",
+      "required": false,
+      "default": "",
+      "description": "identity=account pairs, comma-separated, e.g. you@renci.org=komal. Only these identities can use the collections."
+    },
+    {
+      "name": "GLOBUS_CONTACT_EMAIL",
+      "label": "Globus contact email",
+      "type": "string",
+      "required": false,
+      "default": "",
+      "description": "Contact shown on the endpoints"
+    },
+    {
+      "name": "GLOBUS_ORG",
+      "label": "Globus organization",
+      "type": "string",
+      "required": false,
+      "default": "FABRIC",
+      "description": "Organization shown on the endpoints"
+    },
+    {
+      "name": "GLOBUS_DISPLAY_NAME",
+      "label": "Endpoint name",
+      "type": "string",
+      "required": false,
+      "default": "CryoEM Without Borders SC26",
+      "description": "The site is appended: '... (FIU)'. Never rename a live endpoint - a new name makes a second collection."
+    },
+    {
+      "name": "GLOBUS_CREDS_FILE",
+      "label": "Globus credential file",
+      "type": "string",
+      "required": false,
+      "default": "",
+      "description": "Blank = globus_creds.env in this weave (GCS service credential, see globus_creds.env.example)"
+    },
+    {
+      "name": "GLOBUS_ADMIN",
+      "label": "Globus administrator",
+      "type": "string",
+      "required": false,
+      "default": "",
+      "description": "Globus identity granted the administrator role on each endpoint (needs a Globus subscription; blank = none)"
+    },
+    {
+      "name": "DATA_BASE",
+      "label": "Collection directory",
+      "type": "string",
+      "required": false,
+      "default": "/data",
+      "description": "Directory on the DTN published as the mapped collection; each mapped user gets <dir>/<account>"
+    },
+    {
+      "name": "DATA_MTU",
+      "label": "Data MTU",
+      "type": "string",
+      "required": false,
+      "default": "9000",
+      "description": "MTU on the data NIC; drops to 1500 automatically if jumbo frames do not reach Cape Town"
+    },
+    {
+      "name": "DATA_NIC",
+      "label": "Data NIC",
+      "type": "string",
+      "required": false,
+      "default": "NIC_Basic",
+      "description": "NIC_Basic | NIC_ConnectX_5 | NIC_ConnectX_6 (FIU has ConnectX-5)"
+    },
+    {
+      "name": "CORES",
+      "label": "Cores",
+      "type": "number",
+      "required": false,
+      "default": 8,
+      "description": "DTN VM cores"
+    },
+    {
+      "name": "RAM",
+      "label": "RAM (GB)",
+      "type": "number",
+      "required": false,
+      "default": 32,
+      "description": "DTN VM memory (GCS needs 8+)"
+    },
+    {
+      "name": "DISK",
+      "label": "Disk (GB)",
+      "type": "number",
+      "required": false,
+      "default": 500,
+      "description": "DTN VM disk; the collection lives on it"
+    },
+    {
+      "name": "LEASE_DAYS",
+      "label": "Lease (days)",
+      "type": "number",
+      "required": false,
+      "default": 14,
+      "description": "Every slice is renewed to this many days"
+    },
+    {
+      "name": "KEEP_SLICE",
+      "label": "Keep slices",
+      "type": "string",
+      "required": false,
+      "default": "true",
+      "description": "true = Stop / cleanup never delete anything. false = cleanup removes each Globus endpoint, then its DTN slice."
+    },
+    {
+      "name": "FORCE_DELETE",
+      "label": "Force delete",
+      "type": "string",
+      "required": false,
+      "default": "false",
+      "description": "Stop/cleanup: delete a DTN slice even if removing its Globus endpoint failed (remove it at app.globus.org first)"
+    }
+  ],
+  "nodes": [],
+  "networks": [],
+  "tags": [
+    "loomai:weave"
+  ]
+}

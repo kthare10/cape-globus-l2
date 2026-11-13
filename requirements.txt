@@ -1,0 +1,4 @@
+# Local (laptop / LoomAI Jupyter) dependencies for provision.py and the notebook.
+fabrictestbed-extensions>=2.0.6
+globus-sdk>=3.30,<4
+ipykernel

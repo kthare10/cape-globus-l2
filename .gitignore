@@ -1,0 +1,12 @@
+# Secrets
+globus_creds.env
+id_token.json
+# Each endpoint's identity (results/keys/deployment-key-*.json)
+results/
+.venv/
+__pycache__/
+*.pyc
+*.log
+.DS_Store
+.ipynb_checkpoints/
+cc-usage-log.md
