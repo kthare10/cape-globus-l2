@@ -255,7 +255,7 @@
       "type": "string",
       "required": false,
       "default": "",
-      "description": "Client UUID of a Globus Connect Server service credential (app.globus.org > Settings > Developers > your project > Add a service credential). With the secret, the weave writes it to the credential file (mode 0600) and later runs reuse it."
+      "description": "Client UUID of a Globus Connect Server service credential (app.globus.org > Settings > Developers > your project > Add a service credential). With the secret, the weave saves it in this weave (globus_creds.env, mode 0600, never printed) and later runs reuse it."
     },
     {
       "name": "GLOBUS_CLIENT_SECRET",
@@ -264,14 +264,6 @@
       "required": false,
       "default": "",
       "description": "The secret shown once when the credential is created. Only needed on the first run (or to replace the credential); leave blank afterwards."
-    },
-    {
-      "name": "GLOBUS_CREDS_FILE",
-      "label": "Globus credential file",
-      "type": "string",
-      "required": false,
-      "default": "",
-      "description": "Where the credential is kept. Blank = globus_creds.env in this weave. Fill it in by hand (see globus_creds.env.example) or let the two fields above write it."
     },
     {
       "name": "GLOBUS_ADMIN",
@@ -287,7 +279,7 @@
       "type": "string",
       "required": false,
       "default": "",
-      "description": "Globus Auth project (UUID) to create the endpoints in; the service credential must be an admin of it. Blank = Globus decides."
+      "description": "UUID of the Globus Auth project the endpoints are registered in: app.globus.org > Settings > Developers > your project > Project ID. Use the project that holds the service credential above. Blank works when the credential belongs to only one project; set it if endpoint setup asks for --project-id."
     },
     {
       "name": "DATA_BASE",

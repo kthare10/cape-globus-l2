@@ -69,7 +69,7 @@ doesn't block the other. Status, extend and stop only touch the selected sites.
      `globus_creds.env` (mode 0600, gitignored, never printed), and later runs reuse that file, so leave the
      secret blank after that; or
    - `cp globus_creds.env.example globus_creds.env`, `chmod 600` it, and fill it in by hand
-     (`GLOBUS_CREDS_FILE` points elsewhere if you keep it outside the weave).
+     (from the shell, `GLOBUS_CREDS_FILE=<path>` points at a file kept elsewhere).
 
    NOTE: LoomAI keeps a run's args in `weave.json` (`active_run`) while the run is going, so the secret sits there
    until the run ends. Use the file if that matters to you.
