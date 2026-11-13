@@ -1,0 +1,334 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cape Town Globus Path</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #f5f7fa; --card: #ffffff; --ink: #1c2833; --muted: #5d6d7e; --line: #d5dbe1;
+    --data: #1e8449; --data-soft: rgba(30,132,73,.14); --public: #c0392b; --ctrl: #2471a3;
+    --cape: #7d3c98; --warn: #ca6f1e;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #11161c; --card: #1a222b; --ink: #e5e8eb; --muted: #95a5b4; --line: #2c3742;
+            --data: #2ecc71; --data-soft: rgba(46,204,113,.15); --public: #e74c3c; --ctrl: #5dade2; --cape: #bb8fce; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+         font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  header { padding: 22px 28px 8px; }
+  h1 { margin: 0; font-size: 26px; }
+  header p { margin: 4px 0 0; color: var(--muted); }
+  main { padding: 12px 28px 32px; display: grid; gap: 16px; grid-template-columns: repeat(12, 1fr); }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; }
+  .card h2 { margin: 0 0 10px; font-size: 13px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+  .s3 { grid-column: span 3; } .s4 { grid-column: span 4; } .s5 { grid-column: span 5; }
+  .s7 { grid-column: span 7; } .s8 { grid-column: span 8; } .s12 { grid-column: span 12; }
+  @media (max-width: 1000px) { main { grid-template-columns: 1fr; padding: 12px 16px; }
+    .s3,.s4,.s5,.s7,.s8,.s12 { grid-column: auto; } header { padding: 18px 16px 4px; } }
+  .kv { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; font-size: 14px; }
+  .kv b { color: var(--muted); font-weight: 500; }
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; }
+  .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; background: var(--muted); }
+  .ok { background: var(--data); } .bad { background: var(--public); } .mid { background: var(--warn); }
+  button { font: inherit; border: 1px solid var(--line); background: var(--card); color: var(--ink);
+           padding: 8px 14px; border-radius: 8px; cursor: pointer; }
+  button.primary { background: var(--data); border-color: var(--data); color: #fff; font-weight: 600; }
+  button:disabled { opacity: .5; cursor: default; }
+  input, select { font: inherit; padding: 7px 10px; border: 1px solid var(--line); border-radius: 8px;
+                  background: var(--bg); color: var(--ink); min-width: 0; }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 8px 0; }
+  .grow { flex: 1; }
+  .note { color: var(--muted); font-size: 13px; }
+  .err { color: var(--public); font-size: 13px; min-height: 18px; }
+  .list { max-height: 170px; overflow: auto; border: 1px solid var(--line); border-radius: 8px; margin-top: 6px; }
+  .list div { padding: 4px 10px; cursor: pointer; display: flex; justify-content: space-between; gap: 10px; }
+  .list div:hover { background: var(--data-soft); }
+  #verdict { font-size: 22px; font-weight: 700; margin: 2px 0 6px; min-height: 30px; }
+  .big { display: flex; gap: 28px; flex-wrap: wrap; }
+  .big div span { display: block; font-size: 28px; font-weight: 700; }
+  .big div small { color: var(--muted); }
+  svg text { fill: var(--ink); font-size: 13px; }
+  svg .sub { fill: var(--muted); font-size: 11.5px; }
+  .flow { stroke-dasharray: 10 8; animation: none; }
+  .flowing { animation: dash .6s linear infinite; }
+  @keyframes dash { to { stroke-dashoffset: -18; } }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  td, th { text-align: left; padding: 3px 6px; border-bottom: 1px solid var(--line); }
+</style>
+</head>
+<body>
+<header>
+  <h1>Globus · Cape Town ⇄ FABRIC <span id="site">…</span></h1>
+  <p>Globus control goes over the public internet. The data goes over the research VLAN, because that's the address this endpoint advertises.</p>
+</header>
+<main>
+  <section class="card s8">
+    <h2>The path</h2>
+    <svg id="diagram" viewBox="0 0 820 300" width="100%" role="img" aria-label="Globus control and data paths">
+      <!-- Globus cloud -->
+      <ellipse cx="410" cy="48" rx="120" ry="32" fill="none" stroke="var(--ctrl)" stroke-width="2"/>
+      <text x="410" y="45" text-anchor="middle" font-weight="700">Globus cloud</text>
+      <text x="410" y="62" text-anchor="middle" class="sub">transfer.api.globus.org</text>
+      <!-- control lines -->
+      <line x1="320" y1="68" x2="150" y2="170" stroke="var(--ctrl)" stroke-width="2" stroke-dasharray="4 5"/>
+      <line x1="500" y1="68" x2="670" y2="170" stroke="var(--ctrl)" stroke-width="2" stroke-dasharray="4 5"/>
+      <text x="215" y="118" text-anchor="end" class="sub">control (outbound)</text>
+      <text x="605" y="118" class="sub" id="ctrlLabel">control · TCP 443 · public IP</text>
+      <!-- public internet path (should stay idle) -->
+      <path id="pubLine" class="flow" d="M 230 196 C 410 150, 410 150, 590 196" fill="none" stroke="var(--public)" stroke-width="3" opacity=".35"/>
+      <text x="410" y="158" text-anchor="middle" class="sub" id="pubLabel">public internet (no data expected)</text>
+      <!-- data path -->
+      <line id="dataLine" class="flow" x1="230" y1="232" x2="590" y2="232" stroke="var(--data)" stroke-width="7"/>
+      <text x="410" y="222" text-anchor="middle" font-weight="700" id="dataLabel">DATA · research VLAN</text>
+      <text x="410" y="256" text-anchor="middle" class="sub" id="dataSub">AmLight / RNP · Cape Town ↔ Miami</text>
+      <text x="410" y="272" text-anchor="middle" class="sub" id="fpLabel"></text>
+      <text x="410" y="294" text-anchor="middle" font-weight="700" id="rateLabel" fill="var(--data)"></text>
+      <!-- endpoints -->
+      <rect x="40" y="172" width="190" height="86" rx="12" fill="none" stroke="var(--cape)" stroke-width="2.5"/>
+      <text x="135" y="198" text-anchor="middle" font-weight="700">Cape Town DTN</text>
+      <text x="135" y="215" text-anchor="middle" class="sub">SANReN</text>
+      <text x="135" y="230" text-anchor="middle" class="sub">Globus Connect Personal</text>
+      <text x="135" y="248" text-anchor="middle" class="sub mono" id="peerIp"></text>
+      <rect x="590" y="172" width="190" height="86" rx="12" fill="none" stroke="var(--ctrl)" stroke-width="2.5"/>
+      <text x="685" y="198" text-anchor="middle" font-weight="700" id="dtnName">FABRIC DTN</text>
+      <text x="685" y="215" text-anchor="middle" class="sub">FABRIC VM</text>
+      <text x="685" y="230" text-anchor="middle" class="sub">Globus Connect Server 5.4</text>
+      <text x="685" y="248" text-anchor="middle" class="sub mono" id="dataIp"></text>
+    </svg>
+  </section>
+
+  <section class="card s4">
+    <h2>Status</h2>
+    <div class="kv">
+      <b>VLAN path</b><span id="stPath"><span class="dot"></span>checking…</span>
+      <b>Route</b><span id="stRoute" class="mono">–</span>
+      <b>RTT</b><span id="stRtt">–</span>
+      <b>Jumbo frames</b><span id="stMtu">–</span>
+      <b>Endpoint</b><span id="stEp">–</span>
+      <b>Globus login</b><span id="stLogin">–</span>
+    </div>
+    <div class="row"><button id="btnRecheck">Re-check path</button><button id="btnIperf">iperf3 baseline</button></div>
+    <div class="note" id="iperfOut"></div>
+  </section>
+
+  <section class="card s5" id="loginCard">
+    <h2>1 · Sign in to Globus</h2>
+    <div class="row"><button class="primary" id="btnLogin">Sign in</button><button id="btnLogout">Sign out</button></div>
+    <div class="row"><input id="code" class="grow mono" placeholder="paste the authorization code here"><button id="btnCode">Submit</button></div>
+    <div class="note">Use an identity that is mapped on this DTN and has access to the Cape Town collection.</div>
+    <div class="err" id="loginErr"></div>
+  </section>
+
+  <section class="card s7">
+    <h2>2 · Start a transfer</h2>
+    <div class="row">
+      <b style="min-width:150px">Cape Town → FABRIC</b>
+      <input id="srcPath" class="grow mono" value="/">
+      <button id="btnBrowse">Browse</button>
+      <button class="primary" id="btnPull">Pull</button>
+    </div>
+    <div class="list" id="lsList" hidden></div>
+    <div class="row">
+      <b style="min-width:150px">FABRIC → Cape Town</b>
+      <select id="pushSize"><option>5</option><option selected>10</option><option>25</option><option>50</option></select><span>GB test file</span>
+      <span class="grow"></span>
+      <button class="primary" id="btnPush">Push</button>
+    </div>
+    <div class="row">
+      <b style="min-width:150px">From the web app</b>
+      <a id="webLink" target="_blank" rel="noopener">open Globus web app ↗</a>
+      <span class="grow"></span>
+      <button id="btnWatchWeb">Watch for it</button>
+    </div>
+    <div class="err" id="xferErr"></div>
+  </section>
+
+  <section class="card s12">
+    <h2>3 · Which path carried the bytes</h2>
+    <div id="verdict" class="note">Start a transfer to see it live.</div>
+    <div class="big">
+      <div><small>moved</small><span id="bigMoved">–</span></div>
+      <div><small>on research VLAN</small><span id="bigData" style="color:var(--data)">–</span></div>
+      <div><small>on public uplink</small><span id="bigPub" style="color:var(--public)">–</span></div>
+      <div><small>now</small><span id="bigRate">–</span></div>
+      <div><small>Globus status</small><span id="bigStatus">–</span></div>
+    </div>
+    <div style="height:260px; margin-top:12px"><canvas id="chart"></canvas></div>
+    <details style="margin-top:10px"><summary class="note">Data connections seen on this DTN</summary>
+      <table id="conns"><thead><tr><th>local</th><th>remote</th><th>bytes</th><th>path</th></tr></thead><tbody></tbody></table>
+    </details>
+  </section>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+const fmtGB = (b) => (b / 1e9).toFixed(2) + " GB";
+let INFO = null, ES = null;
+
+async function api(path, opts = {}) {
+  const r = await fetch(path, { headers: { "Content-Type": "application/json" }, ...opts });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || r.statusText);
+  return j;
+}
+function dot(cls, text) { const s = document.createElement("span"); s.className = "dot " + cls;
+  const w = document.createElement("span"); w.append(s, document.createTextNode(text)); return w; }
+
+async function loadInfo() {
+  INFO = await api("/api/info");
+  $("site").textContent = INFO.site;
+  $("dtnName").textContent = `FABRIC DTN · ${INFO.site}`;
+  $("peerIp").textContent = INFO.peer_ip;
+  $("dataIp").textContent = `${INFO.data_ip} (data)`;
+  $("dataLabel").textContent = `DATA · FABRIC VLAN ${INFO.l2_vlan ?? "?"} ↔ Cape Town VLAN ${INFO.cape_vlan ?? 1400}`;
+  $("dataSub").textContent = `${INFO.peer_ip} ↔ ${INFO.data_ip} · same subnet`;
+  $("fpLabel").textContent = `via FABRIC facility port ${INFO.l2_fp ?? "?"}`;
+  $("ctrlLabel").textContent = `control · TCP 443 · ${INFO.public_ip || INFO.public_ip6 || "public IP"}`;
+  $("stEp").replaceChildren(INFO.collection_id ? dot("ok", "registered") : dot("bad", "not registered yet"));
+  $("stLogin").replaceChildren(INFO.logged_in ? dot("ok", "signed in") : dot("mid", "not signed in"));
+  if (INFO.collection_id) {
+    $("webLink").href = `https://app.globus.org/file-manager?origin_id=${INFO.cape_collection}` +
+      `&destination_id=${INFO.collection_id}&destination_path=/${INFO.account}/`;
+  }
+}
+
+async function checkPath() {
+  $("stPath").replaceChildren(dot("", "checking…"));
+  try {
+    const p = await api("/api/path");
+    $("stPath").replaceChildren(p.reachable ? dot("ok", `Cape Town ${p.peer} reachable`)
+                                            : dot("bad", `Cape Town ${p.peer} not reachable`));
+    $("stRoute").textContent = p.route_dev ? `via ${p.route_dev}${p.on_data_nic ? " (data NIC)" : " (NOT the data NIC)"}` : "–";
+    $("stRtt").textContent = p.rtt_ms != null ? `${p.rtt_ms.toFixed(1)} ms` : "–";
+    $("stMtu").replaceChildren(p.jumbo == null ? document.createTextNode(`MTU ${p.mtu}`)
+      : (p.jumbo ? dot("ok", `MTU ${p.mtu} passes`) : dot("mid", `MTU ${p.mtu} does not pass`)));
+  } catch (e) { $("stPath").replaceChildren(dot("bad", e.message)); }
+}
+
+// ---- chart -------------------------------------------------------------------
+const chart = new Chart($("chart"), {
+  type: "line",
+  data: { labels: [], datasets: [
+    { label: "research VLAN (data NIC)", data: [], borderColor: css("--data"), backgroundColor: css("--data-soft"), fill: true, tension: .25, pointRadius: 0, borderWidth: 3 },
+    { label: "public uplink", data: [], borderColor: css("--public"), fill: false, tension: .25, pointRadius: 0, borderWidth: 2 },
+  ]},
+  options: { animation: false, maintainAspectRatio: false,
+    scales: { x: { title: { display: true, text: "seconds" }, ticks: { color: css("--muted") } },
+              y: { beginAtZero: true, title: { display: true, text: "Gb/s on this DTN's data sockets" }, ticks: { color: css("--muted") } } },
+    plugins: { legend: { labels: { color: css("--ink") } } } },
+});
+
+function setFlow(dataOn, pubOn) {
+  $("dataLine").classList.toggle("flowing", dataOn);
+  $("pubLine").classList.toggle("flowing", pubOn);
+  $("pubLine").setAttribute("opacity", pubOn ? "1" : ".35");
+}
+
+function watch(taskId) {
+  if (ES) ES.close();
+  chart.data.labels = []; chart.data.datasets.forEach(d => d.data = []); chart.update();
+  $("verdict").className = ""; $("verdict").style.color = ""; $("verdict").textContent = "Watching task " + taskId + "…";
+  let last = null;
+  ES = new EventSource("/api/stream?task_id=" + encodeURIComponent(taskId));
+  ES.onmessage = (m) => {
+    const ev = JSON.parse(m.data);
+    const tot = ev.totals;
+    let rd = 0, rp = 0;
+    if (last) { const dt = ev.t - last.t || 1;
+      rd = Math.max(0, (tot.data - last.totals.data) * 8 / 1e9 / dt);
+      rp = Math.max(0, (tot.public - last.totals.public) * 8 / 1e9 / dt); }
+    last = ev;
+    chart.data.labels.push(ev.t); chart.data.datasets[0].data.push(rd); chart.data.datasets[1].data.push(rp); chart.update();
+    setFlow(rd > 0.001, rp > 0.001);
+    $("rateLabel").textContent = rd > 0.001 ? `${rd.toFixed(2)} Gb/s` : "";
+    $("bigMoved").textContent = ev.bytes != null ? fmtGB(ev.bytes) : "–";
+    $("bigData").textContent = fmtGB(tot.data);
+    $("bigPub").textContent = fmtGB(tot.public + tot.other);
+    $("bigRate").textContent = rd.toFixed(2) + " Gb/s";
+    $("bigStatus").textContent = (ev.status || "–") + (ev.nice && ev.nice !== "OK" && ev.nice !== "Queued" ? ` (${ev.nice})` : "");
+    const tb = $("conns").querySelector("tbody"); tb.replaceChildren();
+    for (const c of ev.conns) { const tr = document.createElement("tr");
+      for (const v of [c.local, c.remote, c.bytes.toLocaleString(), c.path === "data" ? "research VLAN" : c.path]) {
+        const td = document.createElement("td"); td.textContent = v; tr.append(td); }
+      tb.append(tr); }
+    if (ev.error) { $("verdict").textContent = ev.error; $("verdict").style.color = css("--public"); }
+    if (ev.done) {
+      ES.close(); ES = null; setFlow(false, false); $("rateLabel").textContent = "";
+      const allData = tot.data > 0 && tot.public + tot.other === 0;
+      const rate = ev.rate ? ` · ${(ev.rate * 8 / 1e9).toFixed(2)} Gb/s effective` : "";
+      $("verdict").textContent = tot.data === 0 ? `${ev.status}: no data connection caught (use a larger dataset)`
+        : allData ? `✔ ${ev.status}: every byte took the research VLAN${rate}`
+        : `⚠ ${ev.status}: data was split across paths${rate}`;
+      $("verdict").style.color = tot.data === 0 ? css("--warn") : allData ? css("--data") : css("--public");
+    }
+  };
+  ES.onerror = () => { if (ES) { $("verdict").textContent = "stream interrupted - is the tunnel still up?"; } };
+}
+
+// ---- actions -------------------------------------------------------------------
+$("btnRecheck").onclick = checkPath;
+$("btnIperf").onclick = async () => {
+  $("btnIperf").disabled = true; $("iperfOut").textContent = "running iperf3 for 15 s…";
+  try { const r = await api("/api/iperf", { method: "POST" }); $("iperfOut").textContent = `iperf3: ${r.gbps} Gb/s to Cape Town over the VLAN`; }
+  catch (e) { $("iperfOut").textContent = e.message; }
+  $("btnIperf").disabled = false;
+};
+$("btnLogin").onclick = async () => {
+  $("loginErr").textContent = "";
+  try { const r = await api("/api/login/start", { method: "POST" }); window.open(r.url, "_blank", "noopener"); $("code").focus(); }
+  catch (e) { $("loginErr").textContent = e.message; }
+};
+$("btnCode").onclick = async () => {
+  $("loginErr").textContent = "";
+  try { await api("/api/login/finish", { method: "POST", body: JSON.stringify({ code: $("code").value }) });
+        $("code").value = ""; await loadInfo(); }
+  catch (e) { $("loginErr").textContent = e.message; }
+};
+$("btnLogout").onclick = async () => { await api("/api/logout", { method: "POST" }); await loadInfo(); };
+
+$("btnBrowse").onclick = async () => {
+  $("xferErr").textContent = "";
+  const box = $("lsList");
+  try {
+    const p = $("srcPath").value.endsWith("/") ? $("srcPath").value : $("srcPath").value.replace(/[^/]*$/, "");
+    const r = await api("/api/cape/ls?path=" + encodeURIComponent(p));
+    box.replaceChildren(); box.hidden = false;
+    if (p !== "/") { const up = document.createElement("div"); up.textContent = "↑ ..";
+      up.onclick = () => { $("srcPath").value = p.replace(/[^/]+\/$/, ""); $("btnBrowse").click(); }; box.append(up); }
+    for (const it of r.items) {
+      const d = document.createElement("div"); const a = document.createElement("span"); const b = document.createElement("span");
+      a.textContent = (it.type === "dir" ? "📁 " : "") + it.name; b.className = "note"; b.textContent = it.type === "dir" ? "" : fmtGB(it.size);
+      d.append(a, b);
+      d.onclick = () => { $("srcPath").value = p + it.name + (it.type === "dir" ? "/" : ""); if (it.type === "dir") $("btnBrowse").click(); };
+      box.append(d);
+    }
+  } catch (e) { $("xferErr").textContent = e.message; }
+};
+async function start(body) {
+  $("xferErr").textContent = "";
+  try { const r = await api("/api/transfer", { method: "POST", body: JSON.stringify(body) }); watch(r.task_id); }
+  catch (e) { $("xferErr").textContent = e.message; }
+}
+$("btnPull").onclick = () => start({ direction: "pull", path: $("srcPath").value });
+$("btnPush").onclick = () => start({ direction: "push", size_gb: +$("pushSize").value });
+$("btnWatchWeb").onclick = async () => {
+  $("xferErr").textContent = "";
+  const since = new Date().toISOString();
+  $("verdict").style.color = ""; $("verdict").textContent = "Waiting for a transfer between Cape Town and this DTN started in the Globus web app…";
+  for (let i = 0; i < 100; i++) {
+    try { const r = await api("/api/tasks/recent?since=" + encodeURIComponent(since));
+          if (r.task_id) { watch(r.task_id); return; } }
+    catch (e) { $("xferErr").textContent = e.message; return; }
+    await new Promise(res => setTimeout(res, 3000));
+  }
+  $("verdict").textContent = "No web-app transfer seen in 5 minutes.";
+};
+
+loadInfo().then(checkPath).catch(e => { $("verdict").textContent = "Cannot load config: " + e.message; });
+</script>
+</body>
+</html>

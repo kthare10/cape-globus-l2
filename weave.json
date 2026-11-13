@@ -266,6 +266,38 @@
       "description": "Directory on the DTN published as the mapped collection; each mapped user gets <dir>/<account>"
     },
     {
+      "name": "CAPE_COLLECTION",
+      "label": "Cape Town collection",
+      "type": "string",
+      "required": false,
+      "default": "35df6f87-df63-11f1-977e-02ffe3faed53",
+      "description": "Globus collection on the Cape Town DTN (SANReN GCP - Cape Town SC26)"
+    },
+    {
+      "name": "DEMO_UI",
+      "label": "Demo web UI",
+      "type": "string",
+      "required": false,
+      "default": "true",
+      "description": "Install the demo web UI on each DTN (127.0.0.1 only; reach it with the SSH tunnel command the weave prints)"
+    },
+    {
+      "name": "DEMO_UI_PORT",
+      "label": "Demo UI port",
+      "type": "number",
+      "required": false,
+      "default": 8080,
+      "description": "Port of the demo web UI on the DTN and on your end of the tunnel"
+    },
+    {
+      "name": "GLOBUS_NATIVE_CLIENT_ID",
+      "label": "Globus native app client",
+      "type": "string",
+      "required": false,
+      "default": "61338d24-54d5-408f-a10d-66c06b59f6d2",
+      "description": "Native-app client used to sign in from the demo UI / notebook (default: Globus SDK tutorial client; register your own for anything long-lived)"
+    },
+    {
       "name": "DATA_MTU",
       "label": "Data MTU",
       "type": "string",

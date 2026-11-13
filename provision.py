@@ -51,11 +51,11 @@ KEYS_DIR = os.path.join(RESULTS_DIR, "keys")
 SITE_DEFAULTS = {
     # L2_VLAN "auto" = first free VLAN on the port (AmLight-EXP-Layer2-FIU: 4000-4094);
     # the operators map it to Cape Town's VLAN 1400 on their switch.
-    "FIU":  {"L2_FP": "AmLight-EXP-Layer2-FIU", "L2_VLAN": "auto", "L2_IP": "10.14.0.60/24", "PEER_IP": "10.14.0.50",
+    "FIU":  {"L2_FP": "AmLight-EXP-Layer2-FIU", "L2_VLAN": "auto", "CAPE_SIDE_VLAN": 1400, "L2_IP": "10.14.0.60/24", "PEER_IP": "10.14.0.50",
              # AmLight-Layer3-FIU assignment: VLAN 3002; gateway = first usable address.
              "PUBLIC": "AmLight-Layer3-FIU", "PUBLIC_VLAN": "3002",
              "PUBLIC_ADDR": "67.17.206.74/29", "PUBLIC_ADDR6": "2800:bc0:9000:3002::2/64"},
-    "CIEN": {"L2_FP": "FP2-CIEN", "L2_VLAN": "2901", "L2_IP": "10.29.1.60/24", "PEER_IP": "10.29.1.50",
+    "CIEN": {"L2_FP": "FP2-CIEN", "L2_VLAN": "2901", "CAPE_SIDE_VLAN": 2901, "L2_IP": "10.29.1.60/24", "PEER_IP": "10.29.1.50",
              "PUBLIC": "ext"},
 }
 
@@ -103,6 +103,10 @@ def load_config() -> dict:
         "display": env("GLOBUS_DISPLAY_NAME", "CryoEM Without Borders SC26"),
         "creds": os.path.expanduser(env("GLOBUS_CREDS_FILE", os.path.join(WEAVE_DIR, "globus_creds.env"))),
         "data_base": env("DATA_BASE", "/data"),
+        "cape_collection": env("CAPE_COLLECTION", "35df6f87-df63-11f1-977e-02ffe3faed53"),
+        "native_client_id": env("GLOBUS_NATIVE_CLIENT_ID", "61338d24-54d5-408f-a10d-66c06b59f6d2"),
+        "demo_ui": env("DEMO_UI", "true").lower() == "true",
+        "demo_port": int(env("DEMO_UI_PORT", "8080")),
     }
 
 
@@ -315,6 +319,39 @@ def build_dtn(fablib, cfg: dict, site: str, name: str, prev_leg: dict) -> dict:
 
 
 def configure_dtn(fablib, cfg: dict, site: str, name: str, ports: dict) -> dict:
+    """Configure the DTN, then (whatever stage it reached) install the demo web UI."""
+    info = _configure_dtn(fablib, cfg, site, name, ports)
+    if cfg["demo_ui"] and "data_ip" in info:
+        deploy_ui(fablib, cfg, site, name, info)
+    return info
+
+
+def deploy_ui(fablib, cfg: dict, site: str, name: str, info: dict) -> None:
+    """Globus path demo UI on the DTN, 127.0.0.1 only; prints the SSH tunnel command."""
+    n = fablib.get_slice(name=name).get_node(name=NODE)
+    users = cfg["users"] or info.get("users") or {}
+    demo = {k: info.get(k) for k in ("site", "data_ip", "data_dev", "peer_ip", "mtu", "public_ip",
+                                     "public_ip6", "collection_id", "l2_fp", "l2_vlan")}
+    demo.update(cape_collection=cfg["cape_collection"], native_client_id=cfg["native_client_id"],
+                cape_vlan=SITE_DEFAULTS.get(site, {}).get("CAPE_SIDE_VLAN"),
+                account=next(iter(users.values()), None), data_base=cfg["data_base"])
+    path = os.path.join(RESULTS_DIR, f"demo-{site}.json")
+    os.makedirs(RESULTS_DIR, exist_ok=True)
+    with open(path, "w") as fh:
+        json.dump(demo, fh, indent=2)
+    n.upload_file(path, "demo.json")
+    say(f"{site}: installing the demo web UI (127.0.0.1:{cfg['demo_port']} on the DTN)...")
+    run(n, f"sudo bash tools/setup_demo_ui.sh --conf demo.json --user {n.get_username()} "
+           f"--port {cfg['demo_port']}")
+    port = cfg["demo_port"]
+    ssh = n.get_ssh_command()
+    info["ui_tunnel"] = ssh.replace("ssh ", f"ssh -N -L {port}:127.0.0.1:{port} ", 1)
+    info["ui_url"] = f"http://localhost:{port}/"
+    say(f"{site}: demo UI - run this, then open {info['ui_url']}:")
+    say(f"    {info['ui_tunnel']}")
+
+
+def _configure_dtn(fablib, cfg: dict, site: str, name: str, ports: dict) -> dict:
     leg = cfg["legs"][site]
     s = fablib.get_slice(name=name)
     renew(s, cfg["lease_days"])

@@ -74,6 +74,34 @@ Then open `globus_transfer_demo.ipynb`. It checks route, MTU and iperf3, shows w
 runs transfers both ways. While they run, it reads the DTN's own sockets to show which local address carried the
 data.
 
+## Demo web UI
+
+The weave installs a small web app on each DTN (`DEMO_UI=true`, the default). It listens on `127.0.0.1` only,
+so the SSH tunnel is the only way in. The weave prints the exact command, for example:
+
+```bash
+ssh -N -L 8080:127.0.0.1:8080 -i <slice key> -F ~/work/fabric_config/ssh_config rocky@<DTN mgmt IP>
+# then open http://localhost:8080
+```
+
+LoomAI's tunnel feature works too (port 8080 on the `dtn` node). The page provides:
+
+- **The path:** a diagram of the Globus cloud, the Cape Town DTN and the FABRIC DTN. The research-VLAN line
+  animates while bytes flow on the data NIC. The public line stays dim, and lights up only if data goes over the
+  public uplink.
+- **Status:** whether Cape Town is reachable, the route (it must be the data NIC), RTT, jumbo frames, whether
+  the endpoint is registered, and Globus sign-in. Buttons re-check the path and run an iperf3 baseline (needs
+  `iperf3 -s` on the Cape Town side).
+- **Sign in:** a Globus native-app login. Paste the code back into the page. The refresh token is kept on the
+  DTN in `~/.globus-demo` (mode 0600).
+- **Transfers:** pull a file or folder from Cape Town (with a browser of the Cape Town collection), push a
+  generated test file, or start one in the Globus web app and click **Watch for it**.
+- **Live results:** a Gb/s chart for the research VLAN vs. the public uplink, totals, the data connections, and
+  a verdict when the transfer ends.
+
+Code: `tools/demo_ui/` (Flask, plus one HTML page using Chart.js), installed by `tools/setup_demo_ui.sh` as the
+`globus-demo-ui` systemd service.
+
 ## Safety
 
 - The weave checks that no other host already uses the L2 address (`--dad`) before taking it.
