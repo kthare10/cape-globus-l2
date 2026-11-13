@@ -159,16 +159,30 @@ case "$DATA_IF" in *:*) echo "ERROR: --data-interface must be IPv4 (GCS 5.4)" >&
 for A in $PUBLIC_IP $PUBLIC_IP6; do case "$A" in *:*) ;; *) DATA_IF="$A"; break;; esac; done
 [ -n "$DATA_IF" ] || echo "   IPv6-only node: no --data-interface (GCS accepts IPv4 there only)"
 echo "   data interface: ${DATA_IF:-<none>}"
-if [ -f /etc/globus-connect-server/info.json ] || [ -f /var/lib/globus-connect-server/info.json ]; then
-  # Already a node of this endpoint: `node setup` again would fail, so only
-  # push the data interface (the one setting this weave may change).
-  echo "   node already set up - applying the data interface with 'node update'"
+# Is this VM already a node of the endpoint? Ask Globus (a local info.json exists as
+# soon as the endpoint is registered, before any node is set up, so it proves nothing).
+NODE_ID="$(GCS_CLI_ENDPOINT_ID="$EP_ID" globus-connect-server node list -F json 2>/dev/null | \
+  python3 -c '
+import json, sys
+mine = set(sys.argv[1:])
+try: doc = json.load(sys.stdin)
+except Exception: sys.exit(0)
+def walk(n):
+    if isinstance(n, dict):
+        if n.get("id") and "ip_addresses" in n: yield n
+        for v in n.values(): yield from walk(v)
+    elif isinstance(n, list):
+        for v in n: yield from walk(v)
+for n in walk(doc):
+    if mine & set(n.get("ip_addresses") or []):
+        print(n["id"]); break
+' $PUBLIC_IP $PUBLIC_IP6 || true)"
+if [ -n "$NODE_ID" ]; then
+  # Already a node: `node setup` again would fail, so only push the data interface.
+  echo "   node $NODE_ID already set up - applying the data interface with 'node update'"
   if [ -n "$DATA_IF" ]; then
-    GCS_CLI_ENDPOINT_ID="$EP_ID" globus-connect-server node update --data-interface "$DATA_IF" || \
-      GCS_CLI_ENDPOINT_ID="$EP_ID" globus-connect-server node update \
-        "$(GCS_CLI_ENDPOINT_ID="$EP_ID" globus-connect-server node list -F json 2>/dev/null \
-           | python3 -c 'import json,sys; d=json.load(sys.stdin); d=d[0] if isinstance(d,list) else d; print((d.get("data") or [d])[0]["id"])')" \
-        --data-interface "$DATA_IF"
+    GCS_CLI_ENDPOINT_ID="$EP_ID" globus-connect-server node update "$NODE_ID" --data-interface "$DATA_IF"
+    systemctl restart globus-gridftp-server 2>/dev/null || true
   fi
 else
   globus-connect-server node setup \
