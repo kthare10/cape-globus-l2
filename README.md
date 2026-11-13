@@ -138,6 +138,7 @@ Code: `tools/demo_ui/` (Flask, plus one HTML page using Chart.js; logos and maps
 - The public NIC accepts only 443 and 50000-51000. Management is never filtered or rerouted.
 - `results/keys/deployment-key-<site>.json` **is** the endpoint. Keep it private (it's gitignored).
 - Stop deletes each Globus endpoint **before** its slice. Otherwise only Globus support can remove the endpoint.
+  The notebook's section 7 can unregister the endpoint(s) on their own (`UNREGISTER = True`), leaving the slices.
   If removing an endpoint fails, its slice is **kept** and stop exits non-zero. `FORCE_DELETE=true` overrides
   this, after you've removed the endpoint at app.globus.org.
 - `results/legs.json` is used only by the prefix that wrote it, so stopping one prefix can't touch another's slices.

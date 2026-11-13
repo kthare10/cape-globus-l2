@@ -188,14 +188,20 @@ def path():
 @app.post("/api/iperf")
 def iperf():
     c = conf()
+    # iperf3 can't say *why* it failed; check the VLAN first so the message is useful.
+    if "bytes from" not in sh(f"ping -c 2 -W 2 -I {c['data_ip']} {c['peer_ip']}", timeout=10):
+        return err(f"Cape Town {c['peer_ip']} does not answer on the VLAN - the switch mapping or the "
+                   "Cape Town side isn't up yet, so there is nothing to measure.")
     out = sh(f"iperf3 -c {c['peer_ip']} -B {c['data_ip']} -P 8 -t 15 -J", timeout=40)
     try:
         doc = json.loads(out)
-        if doc.get("error"):
-            return err(f"iperf3: {doc['error']} - is `iperf3 -s` running on the Cape Town DTN?")
-        return jsonify({"gbps": round(doc["end"]["sum_received"]["bits_per_second"] / 1e9, 2)})
     except Exception:
-        return err("iperf3 gave no result - is `iperf3 -s` running on the Cape Town DTN?")
+        return err(f"iperf3 gave no result: {out.strip()[-200:] or 'no output'}")
+    if doc.get("error"):
+        hint = (" - Cape Town answers ping, so start `iperf3 -s` there (TCP 5201)"
+                if "refused" in doc["error"].lower() or "connect" in doc["error"].lower() else "")
+        return err(f"iperf3: {doc['error']}{hint}")
+    return jsonify({"gbps": round(doc["end"]["sum_received"]["bits_per_second"] / 1e9, 2)})
 
 
 # --- data path switch ------------------------------------------------------------
