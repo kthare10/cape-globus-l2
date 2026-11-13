@@ -159,6 +159,27 @@ case "$DATA_IF" in *:*) echo "ERROR: --data-interface must be IPv4 (GCS 5.4)" >&
 for A in $PUBLIC_IP $PUBLIC_IP6; do case "$A" in *:*) ;; *) DATA_IF="$A"; break;; esac; done
 [ -n "$DATA_IF" ] || echo "   IPv6-only node: no --data-interface (GCS accepts IPv4 there only)"
 echo "   data interface: ${DATA_IF:-<none>}"
+# The endpoint's gaccess.io name always points at this node's public address. A
+# site resolver that cached NXDOMAIN while Globus was creating the record can keep
+# answering that for up to a day (the parent zone's negative TTL), and every
+# globus-connect-server call then fails with "Error resolving". Pin it locally.
+pin_domain() {
+  local d="" f
+  for f in /var/lib/globus-connect-server/info.json /etc/globus-connect-server/info.json; do
+    [ -s "$f" ] || continue
+    d="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("domain_name",""))' "$f" 2>/dev/null || true)"
+    [ -n "$d" ] && break
+  done
+  [ -n "$d" ] || return 0
+  getent hosts "$d" >/dev/null 2>&1 && return 0
+  grep -v -F " $d" /etc/hosts > /etc/hosts.globus-tmp || true
+  cat /etc/hosts.globus-tmp > /etc/hosts && rm -f /etc/hosts.globus-tmp
+  echo "$PUBLIC_IP $d" >> /etc/hosts
+  [ -n "$PUBLIC_IP6" ] && echo "$PUBLIC_IP6 $d" >> /etc/hosts
+  echo "   local resolver does not know $d yet - pinned it to this node in /etc/hosts"
+}
+pin_domain
+
 # Is this VM already a node of the endpoint? Ask Globus (a local info.json exists as
 # soon as the endpoint is registered, before any node is set up, so it proves nothing).
 NODE_ID="$(GCS_CLI_ENDPOINT_ID="$EP_ID" globus-connect-server node list -F json 2>/dev/null | \
@@ -191,6 +212,7 @@ else
     ${PUBLIC_IP6:+--ip-address "$PUBLIC_IP6"} \
     ${DATA_IF:+--data-interface "$DATA_IF"}
 fi
+pin_domain
 
 systemctl reload apache2 2>/dev/null || systemctl reload httpd 2>/dev/null || true
 

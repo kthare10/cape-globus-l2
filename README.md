@@ -36,6 +36,20 @@ FABRIC only allows 4000-4094 on `AmLight-EXP-Layer2-FIU`, so the weave takes a V
 (`>>> data VLAN is ... <<<`) and records it in `results/legs.json`. To keep the same VLAN across rebuilds, set
 `FIU_L2_VLAN` to that number.
 
+## Data path choice: VLAN or public
+
+`DATA_PATH` sets which address the endpoint advertises for data:
+
+| `DATA_PATH` | GCS `--data-interface` | use |
+|---|---|---|
+| `vlan` (default) | the data NIC on the Cape Town VLAN | the demo: data on the research path |
+| `public` | the public uplink (e.g. `67.17.206.74`) | transfers with Cape Town before the VLAN is mapped, and the "before" picture |
+
+You can also switch it live from the demo UI (**Data via VLAN** / **Data via public**), or on the DTN with
+`sudo globus-dtn-data-path vlan|public|show`. The switch updates the GCS node and restarts GridFTP, so the
+next transfer uses the new address. Run the same transfer once with each setting to show the before/after:
+red public line, then green VLAN line.
+
 ## Slices
 
 | slice | contents |

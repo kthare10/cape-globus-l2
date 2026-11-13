@@ -258,6 +258,14 @@
       "description": "Globus identity granted the administrator role on each endpoint (needs a Globus subscription; blank = none)"
     },
     {
+      "name": "GLOBUS_PROJECT_ID",
+      "label": "Globus Auth project",
+      "type": "string",
+      "required": false,
+      "default": "",
+      "description": "Globus Auth project (UUID) to create the endpoints in; the service credential must be an admin of it. Blank = Globus decides."
+    },
+    {
       "name": "DATA_BASE",
       "label": "Collection directory",
       "type": "string",
@@ -296,6 +304,14 @@
       "required": false,
       "default": "61338d24-54d5-408f-a10d-66c06b59f6d2",
       "description": "Native-app client used to sign in from the demo UI / notebook (default: Globus SDK tutorial client; register your own for anything long-lived)"
+    },
+    {
+      "name": "DATA_PATH",
+      "label": "Globus data path",
+      "type": "string",
+      "required": false,
+      "default": "vlan",
+      "description": "vlan = GCS advertises the Cape Town VLAN address for data (the demo); public = advertise the public uplink, so transfers with Cape Town work before the VLAN is mapped (also switchable live from the demo UI)"
     },
     {
       "name": "DATA_MTU",

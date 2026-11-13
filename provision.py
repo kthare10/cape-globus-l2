@@ -100,12 +100,16 @@ def load_config() -> dict:
         "org": env("GLOBUS_ORG", "FABRIC"),
         "contact": env("GLOBUS_CONTACT_EMAIL"),
         "admin": env("GLOBUS_ADMIN"),
+        "project_id": env("GLOBUS_PROJECT_ID"),   # Globus Auth project the endpoint is created in
         "display": env("GLOBUS_DISPLAY_NAME", "CryoEM Without Borders SC26"),
         "creds": os.path.expanduser(env("GLOBUS_CREDS_FILE", os.path.join(WEAVE_DIR, "globus_creds.env"))),
         "data_base": env("DATA_BASE", "/data"),
         "cape_collection": env("CAPE_COLLECTION", "35df6f87-df63-11f1-977e-02ffe3faed53"),
         "native_client_id": env("GLOBUS_NATIVE_CLIENT_ID", "61338d24-54d5-408f-a10d-66c06b59f6d2"),
         "demo_ui": env("DEMO_UI", "true").lower() == "true",
+        # Which address GCS advertises for data: the Cape Town VLAN, or (before the VLAN
+        # is mapped, or for a before/after demo) the public uplink.
+        "data_path": env("DATA_PATH", "vlan").lower(),
         "demo_port": int(env("DEMO_UI_PORT", "8080")),
     }
 
@@ -290,7 +294,17 @@ def build_dtn(fablib, cfg: dict, site: str, name: str, prev_leg: dict) -> dict:
         if "Error" in state:
             raise LegError(f"slice {name} is in {state}; delete it (ACTION=stop) and re-run")
         say(f"{site}: slice {name} exists ({state}) - reconfiguring only.")
-        return {k: prev_leg.get(k) for k in ("l2_fp", "l2_vlan", "public_fp", "public_vlan")}
+        ports = {k: prev_leg.get(k) for k in ("l2_fp", "l2_vlan", "public_fp", "public_vlan")}
+        try:   # read them back from the slice (matched by port name; FABlib's network is unreliable)
+            for f in s.get_facilities():
+                vlan = next((i.get_vlan() for i in f.get_interfaces()), None)
+                if f.get_name() == leg["l2_fp"]:
+                    ports.update(l2_fp=f.get_name(), l2_vlan=int(vlan) if vlan else vlan)
+                elif f.get_name() == leg["public"]:
+                    ports.update(public_fp=f.get_name(), public_vlan=int(vlan) if vlan else vlan)
+        except Exception as exc:
+            say(f"{site}: WARNING — could not read facility ports back from the slice ({exc})")
+        return ports
     # Resolve every facility port before creating anything.
     l2_fp, l2_vlan = pick_fp(fablib, site, leg["l2_vlan"], leg["l2_fp"] or None, l2_only=True)
     pub_fp = pub_vlan = None
@@ -443,14 +457,22 @@ def _configure_dtn(fablib, cfg: dict, site: str, name: str, ports: dict) -> dict
               f"{STATE_DIR}/creds.env && shred -u globus_creds.env", quiet=True)
     display = f"{cfg['display']} ({site})"
     owner = f"{read_creds(cfg['creds'])['GCS_CLI_CLIENT_ID']}@clients.auth.globus.org"
-    say(f"{site}: registering '{display}' - data interface {info['data_ip']} (the Cape Town path)")
+    data_if = info["data_ip"]
+    if cfg["data_path"] == "public":
+        if not info["public_ip"]:
+            raise LegError("DATA_PATH=public needs a public IPv4 (GCS takes IPv4 only for --data-interface)")
+        data_if = info["public_ip"]
+    info["data_path"] = cfg["data_path"]
+    say(f"{site}: registering '{display}' - data interface {data_if} "
+        f"({'the Cape Town VLAN' if data_if == info['data_ip'] else 'PUBLIC uplink - DATA_PATH=public'})")
     run(n, (f"sudo bash tools/setup_globus_endpoint.sh --creds-file {STATE_DIR}/creds.env "
             f"--state-dir {STATE_DIR} --display-name {shlex.quote(display)} "
             f"--organization {shlex.quote(cfg['org'])} --contact-email {shlex.quote(cfg['contact'])} "
             f"--owner {shlex.quote(owner)} --dont-set-advertised-owner "
-            f"--public-ip {info['public_ip'] or info['public_ip6']} "
+            + (f"--project-id {shlex.quote(cfg['project_id'])} " if cfg["project_id"] else "")
+            + f"--public-ip {info['public_ip'] or info['public_ip6']} "
             + (f"--public-ip6 {info['public_ip6']} " if info['public_ip'] and info['public_ip6'] else "")
-            + f"--data-interface {info['data_ip']}"))
+            + f"--data-interface {data_if}"))
     save_deployment_key(n, site)
 
     domains = sorted({i.split("@", 1)[1] for i in cfg["users"]})

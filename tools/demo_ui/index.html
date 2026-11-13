@@ -79,7 +79,7 @@
       <text x="605" y="118" class="sub" id="ctrlLabel">control · TCP 443 · public IP</text>
       <!-- public internet path (should stay idle) -->
       <path id="pubLine" class="flow" d="M 230 196 C 410 150, 410 150, 590 196" fill="none" stroke="var(--public)" stroke-width="3" opacity=".35"/>
-      <text x="410" y="158" text-anchor="middle" class="sub" id="pubLabel">public internet (no data expected)</text>
+      <text x="410" y="158" text-anchor="middle" class="sub" id="pubLabel">public internet</text>
       <!-- data path -->
       <line id="dataLine" class="flow" x1="230" y1="232" x2="590" y2="232" stroke="var(--data)" stroke-width="7"/>
       <text x="410" y="222" text-anchor="middle" font-weight="700" id="dataLabel">DATA · research VLAN</text>
@@ -109,16 +109,22 @@
       <b>Jumbo frames</b><span id="stMtu">–</span>
       <b>Endpoint</b><span id="stEp">–</span>
       <b>Globus login</b><span id="stLogin">–</span>
+      <b>Data advertised</b><span id="stDp">–</span>
     </div>
+    <div class="row"><button id="btnDpVlan">Data via VLAN</button><button id="btnDpPub">Data via public</button></div>
     <div class="row"><button id="btnRecheck">Re-check path</button><button id="btnIperf">iperf3 baseline</button></div>
     <div class="note" id="iperfOut"></div>
   </section>
 
   <section class="card s5" id="loginCard">
     <h2>1 · Sign in to Globus</h2>
-    <div class="row"><button class="primary" id="btnLogin">Sign in</button><button id="btnLogout">Sign out</button></div>
-    <div class="row"><input id="code" class="grow mono" placeholder="paste the authorization code here"><button id="btnCode">Submit</button></div>
-    <div class="note">Use an identity that is mapped on this DTN and has access to the Cape Town collection.</div>
+    <div id="signedIn" hidden><div class="row"><span id="signedInText"></span><span class="grow"></span><button id="btnLogout">Sign out</button></div>
+      <div class="note">One-time: the session is kept on the DTN (refresh token), so transfers need no further sign-in.</div></div>
+    <div id="signedOut">
+      <div class="row"><button class="primary" id="btnLogin">Sign in</button></div>
+      <div class="row"><input id="code" class="grow mono" placeholder="paste the authorization code here"><button id="btnCode">Submit</button></div>
+      <div class="note">Use an identity that is mapped on this DTN and has access to the Cape Town collection.</div>
+    </div>
     <div class="err" id="loginErr"></div>
   </section>
 
@@ -189,7 +195,10 @@ async function loadInfo() {
   $("fpLabel").textContent = `via FABRIC facility port ${INFO.l2_fp ?? "?"}`;
   $("ctrlLabel").textContent = `control · TCP 443 · ${INFO.public_ip || INFO.public_ip6 || "public IP"}`;
   $("stEp").replaceChildren(INFO.collection_id ? dot("ok", "registered") : dot("bad", "not registered yet"));
-  $("stLogin").replaceChildren(INFO.logged_in ? dot("ok", "signed in") : dot("mid", "not signed in"));
+  $("stLogin").replaceChildren(INFO.logged_in ? dot("ok", "signed in")
+    : INFO.login_stale ? dot("mid", "sign in again (new collection consent)") : dot("mid", "not signed in"));
+  $("signedIn").hidden = !INFO.logged_in; $("signedOut").hidden = !!INFO.logged_in;
+  $("signedInText").replaceChildren(dot("ok", "Signed in to Globus"));
   if (INFO.collection_id) {
     $("webLink").href = `https://app.globus.org/file-manager?origin_id=${INFO.cape_collection}` +
       `&destination_id=${INFO.collection_id}&destination_path=/${INFO.account}/`;
@@ -271,6 +280,20 @@ function watch(taskId) {
 
 // ---- actions -------------------------------------------------------------------
 $("btnRecheck").onclick = checkPath;
+async function dataPath(mode) {
+  $("stDp").replaceChildren(dot("", mode ? "switching…" : "checking…"));
+  try {
+    const r = mode ? await api("/api/datapath", { method: "POST", body: JSON.stringify({ mode }) })
+                   : await api("/api/datapath");
+    $("stDp").replaceChildren(r.mode === "vlan" ? dot("ok", `VLAN · ${r.address}`)
+                                                : dot("mid", `${r.mode.toUpperCase()} · ${r.address}`));
+    $("pubLabel").textContent = r.mode === "vlan" ? "public internet (no data expected)"
+                                                  : "public internet (data advertised here now)";
+    $("dataLine").setAttribute("opacity", r.mode === "vlan" ? "1" : ".35");
+  } catch (e) { $("stDp").replaceChildren(dot("bad", e.message)); }
+}
+$("btnDpVlan").onclick = () => dataPath("vlan");
+$("btnDpPub").onclick = () => dataPath("public");
 $("btnIperf").onclick = async () => {
   $("btnIperf").disabled = true; $("iperfOut").textContent = "running iperf3 for 15 s…";
   try { const r = await api("/api/iperf", { method: "POST" }); $("iperfOut").textContent = `iperf3: ${r.gbps} Gb/s to Cape Town over the VLAN`; }
@@ -328,7 +351,7 @@ $("btnWatchWeb").onclick = async () => {
   $("verdict").textContent = "No web-app transfer seen in 5 minutes.";
 };
 
-loadInfo().then(checkPath).catch(e => { $("verdict").textContent = "Cannot load config: " + e.message; });
+loadInfo().then(checkPath).then(() => dataPath()).catch(e => { $("verdict").textContent = "Cannot load config: " + e.message; });
 </script>
 </body>
 </html>

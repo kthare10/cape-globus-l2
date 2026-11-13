@@ -25,6 +25,7 @@ from flask import Flask, Response, jsonify, request, send_from_directory
 CONF_FILE = os.environ.get("DEMO_CONF", "/etc/globus-dtn/demo.json")
 STATE = os.path.expanduser("~/.globus-demo")
 TOKENS = os.path.join(STATE, "tokens.json")
+FLOW = os.path.join(STATE, "login-verifier")   # PKCE verifier, so a restart mid-login is harmless
 TRANSFER_RS = "transfer.api.globus.org"
 TRANSFER_SCOPE = "urn:globus:auth:scope:transfer.api.globus.org:all"
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -74,25 +75,47 @@ def save_tokens(resp) -> None:
         with open(TOKENS) as fh:
             old = json.load(fh)
     t.setdefault("refresh_token", old.get("refresh_token"))
+    t["requested_scopes"] = old.get("requested_scopes") if "requested_scopes" not in t and old else t.get("requested_scopes")
+    t["requested_scopes"] = t["requested_scopes"] or requested_scopes()
     fd = os.open(TOKENS, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, "w") as fh:
         json.dump(t, fh)
 
 
-def tc() -> globus_sdk.TransferClient | None:
+def load_tokens() -> dict | None:
+    """Tokens, or None when absent or granted before this DTN's collection existed
+    (then they lack its data_access consent and every transfer would be refused)."""
     if not os.path.exists(TOKENS):
         return None
     with open(TOKENS) as fh:
         t = json.load(fh)
+    return t if t.get("requested_scopes") == requested_scopes() else None
+
+
+def tc() -> globus_sdk.TransferClient | None:
+    t = load_tokens()
+    if t is None:
+        return None
     authz = globus_sdk.RefreshTokenAuthorizer(
         t["refresh_token"], auth_client(), access_token=t["access_token"],
         expires_at=t["expires_at_seconds"], on_refresh=save_tokens)
     return globus_sdk.TransferClient(authorizer=authz)
 
 
+def start_flow(verifier: str | None = None) -> None:
+    auth_client().oauth2_start_flow(requested_scopes=requested_scopes(), refresh_tokens=True,
+                                    verifier=verifier)
+
+
 @app.post("/api/login/start")
 def login_start():
-    auth_client().oauth2_start_flow(requested_scopes=requested_scopes(), refresh_tokens=True)
+    import secrets
+    verifier = secrets.token_urlsafe(64)[:96]
+    os.makedirs(STATE, mode=0o700, exist_ok=True)
+    fd = os.open(FLOW, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as fh:
+        fh.write(verifier)
+    start_flow(verifier)
     return jsonify({"url": auth_client().oauth2_get_authorize_url()})
 
 
@@ -101,10 +124,27 @@ def login_finish():
     code = (request.json or {}).get("code", "").strip()
     if not code:
         return err("no code")
+    if getattr(auth_client(), "current_oauth2_flow_manager", None) is None:
+        # The service restarted after "Sign in": resume the same flow from the saved verifier.
+        if not os.path.exists(FLOW):
+            return err("no sign-in in progress - click Sign in first")
+        with open(FLOW) as fh:
+            start_flow(fh.read().strip())
     try:
-        save_tokens(auth_client().oauth2_exchange_code_for_tokens(code))
+        resp = auth_client().oauth2_exchange_code_for_tokens(code)
+        if os.path.exists(TOKENS):
+            os.remove(TOKENS)                    # a fresh sign-in replaces any stale token
+        save_tokens(resp)
+        with open(TOKENS) as fh:
+            t = json.load(fh)
+        t["requested_scopes"] = requested_scopes()
+        fd = os.open(TOKENS, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w") as fh:
+            json.dump(t, fh)
+        if os.path.exists(FLOW):
+            os.remove(FLOW)
     except globus_sdk.GlobusAPIError as e:
-        return err(f"Globus refused the code: {e.message}")
+        return err(f"Globus refused the code ({e.http_status}) - click Sign in and use the new code")
     except Exception as e:                      # e.g. flow not started in this process
         return err(f"login failed: {e} - click Sign in again")
     return jsonify({"ok": True})
@@ -121,7 +161,8 @@ def logout():
 @app.get("/api/info")
 def info():
     c = conf()
-    return jsonify({**c, "logged_in": os.path.exists(TOKENS)})
+    stale = os.path.exists(TOKENS) and load_tokens() is None
+    return jsonify({**c, "logged_in": load_tokens() is not None, "login_stale": stale})
 
 
 @app.get("/api/path")
@@ -155,11 +196,31 @@ def iperf():
         return err("iperf3 gave no result - is `iperf3 -s` running on the Cape Town DTN?")
 
 
+# --- data path switch ------------------------------------------------------------
+def data_path_cmd(mode: str) -> tuple:
+    out = sh(f"sudo -n /usr/local/sbin/globus-dtn-data-path {mode} 2>&1", timeout=120)
+    m = re.search(r"DATAPATH mode=(\S+) address=(\S+)", out)
+    return (m[1], m[2], out) if m else (None, None, out)
+
+
+@app.route("/api/datapath", methods=["GET", "POST"])
+def datapath():
+    mode = "show" if request.method == "GET" else (request.json or {}).get("mode")
+    if mode not in ("show", "vlan", "public"):
+        return err("mode must be vlan or public")
+    cur, addr, out = data_path_cmd(mode)
+    if cur is None:
+        return err(out.strip().splitlines()[-1] if out.strip() else "could not read the data path")
+    return jsonify({"mode": cur, "address": addr})
+
+
 # --- Globus actions -----------------------------------------------------------
 def need_tc():
     client = tc()
     if client is None:
-        raise PermissionError("sign in to Globus first")
+        raise PermissionError("sign in to Globus first" if not os.path.exists(TOKENS) else
+                              "your Globus sign-in predates this endpoint's collection - sign in again "
+                              "to grant it access (data_access consent)")
     if not conf().get("collection_id"):
         raise PermissionError("this DTN's Globus endpoint is not registered yet (re-run the weave "
                               "with Globus credentials)")
@@ -214,6 +275,8 @@ def transfer():
             td.add_item(src, dst, recursive=is_dir)
         return jsonify({"task_id": client.submit_transfer(td)["task_id"]})
     except globus_sdk.GlobusAPIError as e:
+        if "consent" in str(e.message).lower():
+            return err("Globus needs a fresh consent for this collection - Sign out, then Sign in again", 401)
         return err(f"Globus: {e.message}")
     except subprocess.SubprocessError as e:
         return err(f"could not create the test file: {e}")
