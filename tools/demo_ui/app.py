@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import mimetypes
 import os
 import re
 import subprocess
@@ -20,7 +21,8 @@ import time
 from datetime import datetime, timezone
 
 import globus_sdk
-from flask import Flask, Response, jsonify, request, send_from_directory
+from flask import Flask, Response, jsonify, request
+from werkzeug.serving import WSGIRequestHandler
 
 CONF_FILE = os.environ.get("DEMO_CONF", "/etc/globus-dtn/demo.json")
 STATE = os.path.expanduser("~/.globus-demo")
@@ -330,51 +332,89 @@ def path_of(c: dict, local_ip: str) -> str:
     return "other"
 
 
+_watches = {}   # task id -> {"t0": start time, "seen": {(local, remote): max bytes}}
+
+
+def snapshot(task_id, reset=False) -> dict:
+    """Per-path bytes on this DTN's GridFTP sockets since the watch started (+ task status).
+    Polled by the page every 2 s: plain JSON, so it works through any proxy (LoomAI's
+    tunnel does not pass server-sent events)."""
+    c = conf()
+    key = task_id or "-"
+    if reset or key not in _watches:
+        _watches[key] = {"t0": time.time(), "seen": {}}
+    w = _watches[key]
+    seen = w["seen"]
+    for k, b in data_conns().items():
+        seen[k] = max(seen.get(k, 0), b)
+    totals = {"data": 0, "public": 0, "other": 0}
+    for (loc, _), b in seen.items():
+        totals[path_of(c, _ip(loc))] += b
+    ev = {"t": round(time.time() - w["t0"], 1), "totals": totals,
+          "conns": [{"local": _ip(l), "remote": _ip(r), "bytes": b, "path": path_of(c, _ip(l))}
+                    for (l, r), b in sorted(seen.items())]}
+    if task_id:
+        try:
+            t = tc().get_task(task_id)
+            ev.update(status=t["status"], nice=t.get("nice_status"), bytes=t["bytes_transferred"],
+                      rate=t.get("effective_bytes_per_second") or 0, label=t.get("label"))
+            ev["done"] = t["status"] in DONE or t.get("nice_status") in ("PERMISSION_DENIED",
+                                                                           "ENDPOINT_ERROR")
+        except globus_sdk.GlobusAPIError as e:
+            ev.update(error=e.message, done=True)
+        except Exception as e:                      # e.g. signed out meanwhile
+            ev.update(error=str(e), done=True)
+    if ev.get("done"):
+        _watches.pop(key, None)
+    return ev
+
+
+@app.get("/api/poll")
+def poll():
+    return jsonify(snapshot(request.args.get("task_id") or None, request.args.get("reset") == "1"))
+
+
 @app.get("/api/stream")
 def stream():
-    """Server-sent events: per-path bytes on this DTN's GridFTP sockets (+ task status)."""
-    c = conf()
+    """Server-sent events version of /api/poll (for direct SSH tunnels)."""
     task_id = request.args.get("task_id") or None
-    client = tc() if task_id else None
 
     def gen():
-        seen, t0 = {}, time.time()
-        while time.time() - t0 < 3600:
-            for k, b in data_conns().items():
-                seen[k] = max(seen.get(k, 0), b)
-            totals = {"data": 0, "public": 0, "other": 0}
-            for (loc, _), b in seen.items():
-                totals[path_of(c, _ip(loc))] += b
-            ev = {"t": round(time.time() - t0, 1), "totals": totals,
-                  "conns": [{"local": _ip(l), "remote": _ip(r), "bytes": b, "path": path_of(c, _ip(l))}
-                            for (l, r), b in sorted(seen.items())]}
-            if client:
-                try:
-                    t = client.get_task(task_id)
-                    ev.update(status=t["status"], nice=t.get("nice_status"),
-                              bytes=t["bytes_transferred"],
-                              rate=t.get("effective_bytes_per_second") or 0, label=t.get("label"))
-                    ev["done"] = t["status"] in DONE or t.get("nice_status") in ("PERMISSION_DENIED",
-                                                                                   "ENDPOINT_ERROR")
-                except globus_sdk.GlobusAPIError as e:
-                    ev.update(error=e.message, done=True)
+        ev = snapshot(task_id, reset=True)
+        while True:
             yield f"data: {json.dumps(ev)}\n\n"
-            if ev.get("done"):
+            if ev.get("done") or ev["t"] > 3600:
                 return
             time.sleep(2)
+            ev = snapshot(task_id)
 
     return Response(gen(), mimetype="text/event-stream",
                     headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
+def _whole_file(path: str, mimetype: str, max_age: int = 0) -> Response:
+    """Send a file as one buffered body with Content-Length (no chunked file streaming),
+    which proxies such as LoomAI's tunnel relay reliably."""
+    with open(path, "rb") as fh:
+        body = fh.read()
+    r = Response(body, mimetype=mimetype)
+    r.headers["Cache-Control"] = f"public, max-age={max_age}" if max_age else "no-cache"
+    return r
+
+
 @app.get("/")
 def index():
-    return send_from_directory(HERE, "index.html")
+    return _whole_file(os.path.join(HERE, "index.html"), "text/html")
 
 
 @app.get("/static/<path:name>")
 def static_file(name):
-    return send_from_directory(os.path.join(HERE, "static"), name, max_age=3600)
+    base = os.path.realpath(os.path.join(HERE, "static"))
+    path = os.path.realpath(os.path.join(base, name))
+    if not path.startswith(base + os.sep) or not os.path.isfile(path):
+        return jsonify({"error": "not found"}), 404
+    mime = mimetypes.guess_type(path)[0] or "application/octet-stream"
+    return _whole_file(path, mime, max_age=3600)
 
 
 if __name__ == "__main__":
@@ -382,4 +422,11 @@ if __name__ == "__main__":
     ap.add_argument("--host", default="127.0.0.1")
     ap.add_argument("--port", type=int, default=8080)
     a = ap.parse_args()
-    app.run(host=a.host, port=a.port, threaded=True)
+    try:
+        # A real WSGI server with HTTP/1.1 keep-alive: Flask's dev server closes the socket
+        # right after each response, and LoomAI's tunnel then cut pages short (502).
+        from waitress import serve
+        serve(app, host=a.host, port=a.port, threads=8, channel_timeout=120, ident="globus-demo")
+    except ImportError:
+        WSGIRequestHandler.protocol_version = "HTTP/1.1"
+        app.run(host=a.host, port=a.port, threaded=True)

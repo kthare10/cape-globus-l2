@@ -227,7 +227,7 @@
 const $ = (id) => document.getElementById(id);
 const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
 const fmtGB = (b) => (b / 1e9).toFixed(2) + " GB";
-let INFO = null, ES = null;
+let INFO = null, POLL = null, WATCH = 0;
 
 async function api(path, opts = {}) {
   const r = await fetch(path, { headers: { "Content-Type": "application/json" }, ...opts });
@@ -239,7 +239,7 @@ function dot(cls, text) { const s = document.createElement("span"); s.className 
   const w = document.createElement("span"); w.append(s, document.createTextNode(text)); return w; }
 
 async function loadInfo() {
-  INFO = await api("/api/info");
+  INFO = await api("api/info");
   $("site").textContent = INFO.site;
   $("dtnName").textContent = `FABRIC DTN · ${INFO.site}`;
   $("fabMapLabel").textContent = `FABRIC DTN · ${INFO.site}`;
@@ -263,7 +263,7 @@ async function loadInfo() {
 async function checkPath() {
   $("stPath").replaceChildren(dot("", "checking…"));
   try {
-    const p = await api("/api/path");
+    const p = await api("api/path");
     $("stPath").replaceChildren(p.reachable ? dot("ok", `Cape Town ${p.peer} reachable`)
                                             : dot("bad", `Cape Town ${p.peer} not reachable`));
     $("stRoute").textContent = p.route_dev ? `via ${p.route_dev}${p.on_data_nic ? " (data NIC)" : " (NOT the data NIC)"}` : "–";
@@ -294,13 +294,24 @@ function setFlow(dataOn, pubOn) {
 }
 
 function watch(taskId) {
-  if (ES) ES.close();
+  if (POLL) clearTimeout(POLL);
+  const me = ++WATCH;          // a newer watch() stops this one
   chart.data.labels = []; chart.data.datasets.forEach(d => d.data = []); chart.update();
   $("verdict").className = ""; $("verdict").style.color = ""; $("verdict").textContent = "Watching task " + taskId + "…";
   let last = null;
-  ES = new EventSource("/api/stream?task_id=" + encodeURIComponent(taskId));
-  ES.onmessage = (m) => {
-    const ev = JSON.parse(m.data);
+  // Plain JSON polling every 2 s (not server-sent events): works through LoomAI's tunnel too.
+  let first = true, fails = 0;
+  const tick = async () => {
+    if (me !== WATCH) return;
+    let ev;
+    try {
+      ev = await api("api/poll?task_id=" + encodeURIComponent(taskId) + (first ? "&reset=1" : ""));
+      first = false; fails = 0;
+      if (me !== WATCH) return;
+    } catch (e) {
+      if (++fails >= 5) { $("verdict").textContent = "lost contact with the DTN - is the tunnel still up?"; return; }
+      POLL = setTimeout(tick, 2000); return;
+    }
     const tot = ev.totals;
     let rd = 0, rp = 0;
     if (last) { const dt = ev.t - last.t || 1;
@@ -322,16 +333,18 @@ function watch(taskId) {
       tb.append(tr); }
     if (ev.error) { $("verdict").textContent = ev.error; $("verdict").style.color = css("--public"); }
     if (ev.done) {
-      ES.close(); ES = null; setFlow(false, false); $("rateLabel").textContent = "";
+      POLL = null; setFlow(false, false); $("rateLabel").textContent = "";
       const allData = tot.data > 0 && tot.public + tot.other === 0;
       const rate = ev.rate ? ` · ${(ev.rate * 8 / 1e9).toFixed(2)} Gb/s effective` : "";
       $("verdict").textContent = tot.data === 0 ? `${ev.status}: no data connection caught (use a larger dataset)`
         : allData ? `✔ ${ev.status}: every byte took the research VLAN${rate}`
         : `⚠ ${ev.status}: data was split across paths${rate}`;
       $("verdict").style.color = tot.data === 0 ? css("--warn") : allData ? css("--data") : css("--public");
+      return;
     }
+    POLL = setTimeout(tick, 2000);
   };
-  ES.onerror = () => { if (ES) { $("verdict").textContent = "stream interrupted - is the tunnel still up?"; } };
+  tick();
 }
 
 // ---- actions -------------------------------------------------------------------
@@ -339,8 +352,8 @@ $("btnRecheck").onclick = checkPath;
 async function dataPath(mode) {
   $("stDp").replaceChildren(dot("", mode ? "switching…" : "checking…"));
   try {
-    const r = mode ? await api("/api/datapath", { method: "POST", body: JSON.stringify({ mode }) })
-                   : await api("/api/datapath");
+    const r = mode ? await api("api/datapath", { method: "POST", body: JSON.stringify({ mode }) })
+                   : await api("api/datapath");
     $("stDp").replaceChildren(r.mode === "vlan" ? dot("ok", `VLAN · ${r.address}`)
                                                 : dot("mid", `${r.mode.toUpperCase()} · ${r.address}`));
     $("pubLabel").textContent = r.mode === "vlan" ? "public internet (no data expected)"
@@ -352,29 +365,29 @@ $("btnDpVlan").onclick = () => dataPath("vlan");
 $("btnDpPub").onclick = () => dataPath("public");
 $("btnIperf").onclick = async () => {
   $("btnIperf").disabled = true; $("iperfOut").textContent = "running iperf3 for 15 s…";
-  try { const r = await api("/api/iperf", { method: "POST" }); $("iperfOut").textContent = `iperf3: ${r.gbps} Gb/s to Cape Town over the VLAN`; }
+  try { const r = await api("api/iperf", { method: "POST" }); $("iperfOut").textContent = `iperf3: ${r.gbps} Gb/s to Cape Town over the VLAN`; }
   catch (e) { $("iperfOut").textContent = e.message; }
   $("btnIperf").disabled = false;
 };
 $("btnLogin").onclick = async () => {
   $("loginErr").textContent = "";
-  try { const r = await api("/api/login/start", { method: "POST" }); window.open(r.url, "_blank", "noopener"); $("code").focus(); }
+  try { const r = await api("api/login/start", { method: "POST" }); window.open(r.url, "_blank", "noopener"); $("code").focus(); }
   catch (e) { $("loginErr").textContent = e.message; }
 };
 $("btnCode").onclick = async () => {
   $("loginErr").textContent = "";
-  try { await api("/api/login/finish", { method: "POST", body: JSON.stringify({ code: $("code").value }) });
+  try { await api("api/login/finish", { method: "POST", body: JSON.stringify({ code: $("code").value }) });
         $("code").value = ""; await loadInfo(); }
   catch (e) { $("loginErr").textContent = e.message; }
 };
-$("btnLogout").onclick = async () => { await api("/api/logout", { method: "POST" }); await loadInfo(); };
+$("btnLogout").onclick = async () => { await api("api/logout", { method: "POST" }); await loadInfo(); };
 
 $("btnBrowse").onclick = async () => {
   $("xferErr").textContent = "";
   const box = $("lsList");
   try {
     const p = $("srcPath").value.endsWith("/") ? $("srcPath").value : $("srcPath").value.replace(/[^/]*$/, "");
-    const r = await api("/api/cape/ls?path=" + encodeURIComponent(p));
+    const r = await api("api/cape/ls?path=" + encodeURIComponent(p));
     box.replaceChildren(); box.hidden = false;
     if (p !== "/") { const up = document.createElement("div"); up.textContent = "↑ ..";
       up.onclick = () => { $("srcPath").value = p.replace(/[^/]+\/$/, ""); $("btnBrowse").click(); }; box.append(up); }
@@ -389,7 +402,7 @@ $("btnBrowse").onclick = async () => {
 };
 async function start(body) {
   $("xferErr").textContent = "";
-  try { const r = await api("/api/transfer", { method: "POST", body: JSON.stringify(body) }); watch(r.task_id); }
+  try { const r = await api("api/transfer", { method: "POST", body: JSON.stringify(body) }); watch(r.task_id); }
   catch (e) { $("xferErr").textContent = e.message; }
 }
 $("btnPull").onclick = () => start({ direction: "pull", path: $("srcPath").value });
@@ -399,7 +412,7 @@ $("btnWatchWeb").onclick = async () => {
   const since = new Date().toISOString();
   $("verdict").style.color = ""; $("verdict").textContent = "Waiting for a transfer between Cape Town and this DTN started in the Globus web app…";
   for (let i = 0; i < 100; i++) {
-    try { const r = await api("/api/tasks/recent?since=" + encodeURIComponent(since));
+    try { const r = await api("api/tasks/recent?since=" + encodeURIComponent(since));
           if (r.task_id) { watch(r.task_id); return; } }
     catch (e) { $("xferErr").textContent = e.message; return; }
     await new Promise(res => setTimeout(res, 3000));

@@ -30,7 +30,7 @@ install -m 0644 "$CONF" /etc/globus-dtn/demo.json
 install -m 0755 "$HERE/set_data_path.sh" /usr/local/sbin/globus-dtn-data-path
 [ -x "$DEST/venv/bin/python" ] || python3 -m venv "$DEST/venv"
 "$DEST/venv/bin/pip" install -q --upgrade pip >/dev/null
-"$DEST/venv/bin/pip" install -q 'flask>=2.2,<4' 'globus-sdk>=3.30,<4'
+"$DEST/venv/bin/pip" install -q 'flask>=2.2,<4' 'globus-sdk>=3.30,<4' 'waitress>=2.1,<4'
 
 cat > /etc/systemd/system/globus-demo-ui.service <<UNIT
 [Unit]
