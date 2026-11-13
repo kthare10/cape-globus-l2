@@ -1,7 +1,7 @@
 {
   "name": "Cape Town Globus Data Path",
-  "description": "Globus Connect Server endpoints at FIU and/or CIEN whose data traffic to the SANReN Cape Town DTN runs over an L2 facility-port VLAN, while Globus reaches them on public addresses.",
-  "description_long": "Demonstrates that Globus data can be steered onto a private research path purely by where the endpoints advertise their data interface. Each DTN VM (Rocky 9, one slice per site: FIU, CIEN or both, picked with the Build FIU / Build CIEN checkboxes; FIU only by default) gets a public uplink (AmLight-Layer3-FIU at FIU, FABnetv4Ext at CIEN) on which Globus Connect Server 5.4 is registered, and a data NIC bridged through an L2 facility port (AmLight-EXP-Layer2-FIU at FIU, FP2-CIEN at CIEN) onto the VLAN that reaches the Cape Town DTN; that NIC is GCS's --data-interface. FABRIC offers only VLANs 4000-4094 on AmLight-EXP-Layer2-FIU, so the weave takes a free one and reports it for the operators to map to Cape Town's VLAN 1400 on the switch. The Cape Town side runs Globus Connect Personal, which opens every data connection itself to the advertised address, so the bytes take the VLAN - for transfers submitted from the CLI or the web app alike. The weave checks the address is not already in use, reachability and jumbo frames to Cape Town, the public addresses (no NAT), firewalls the public NIC to 443 + 50000-51000, creates one mapped collection per endpoint, saves each deployment key under results/keys, writes results/legs.json and exits. globus_transfer_demo.ipynb runs transfers to and from the Cape Town collection and proves the path from the DTN's own sockets. Stop deletes each Globus endpoint before its slice, and keeps the slice if that fails.",
+  "description": "Globus Connect Server endpoints at FIU or CIEN whose data traffic to the SANReN Cape Town DTN runs over an L2 facility-port VLAN, while Globus reaches them on public addresses.",
+  "description_long": "Demonstrates that Globus data can be steered onto a private research path purely by where the endpoints advertise their data interface. Each DTN VM (Rocky 9, one slice per run at the SITE chosen: FIU or CIEN; run it twice with the same prefix for both) gets a public uplink (AmLight-Layer3-FIU at FIU, FABnetv4Ext at CIEN) on which Globus Connect Server 5.4 is registered, and a data NIC bridged through an L2 facility port (AmLight-EXP-Layer2-FIU at FIU, FP2-CIEN at CIEN) onto the VLAN that reaches the Cape Town DTN; that NIC is GCS's --data-interface. FABRIC offers only VLANs 4000-4094 on AmLight-EXP-Layer2-FIU, so the weave takes a free one and reports it for the operators to map to Cape Town's VLAN 1400 on the switch. The Cape Town side runs Globus Connect Personal, which opens every data connection itself to the advertised address, so the bytes take the VLAN - for transfers submitted from the CLI or the web app alike. The weave checks the address is not already in use, reachability and jumbo frames to Cape Town, the public addresses (no NAT), firewalls the public NIC to 443 + 50000-51000, creates one mapped collection per endpoint, saves each deployment key under results/keys, writes results/legs.json and exits. globus_transfer_demo.ipynb runs transfers to and from the Cape Town collection and proves the path from the DTN's own sockets. Stop deletes each Globus endpoint before its slice, and keeps the slice if that fails.",
   "run_script": "weave.sh",
   "log_file": "weave.log",
   "cleanup_script": "weave_cleanup.sh",
@@ -18,20 +18,12 @@
       "description": "Prefix for the slices: <prefix>-fiu, <prefix>-cien"
     },
     {
-      "name": "BUILD_FIU",
-      "label": "Build FIU DTN",
-      "type": "boolean",
-      "required": false,
-      "default": true,
-      "description": "Build the DTN at FIU (slice <prefix>-fiu): public on AmLight-Layer3-FIU, data on AmLight-EXP-Layer2-FIU."
-    },
-    {
-      "name": "BUILD_CIEN",
-      "label": "Build CIEN DTN",
-      "type": "boolean",
-      "required": false,
-      "default": false,
-      "description": "Build the DTN at CIEN too (slice <prefix>-cien). Off while CIEN is offline; the CIEN fields below are used only when this is on."
+      "name": "SITE",
+      "label": "Site",
+      "type": "string",
+      "required": true,
+      "default": "FIU",
+      "description": "Where to build the DTN: FIU or CIEN (CIEN is offline for now). Slice <prefix>-fiu or <prefix>-cien. The network fields below are blank = this site's default (shown greyed out). For both DTNs, run the weave twice with the same prefix, once per site."
     },
     {
       "name": "FP_BW",
@@ -42,180 +34,103 @@
       "description": "Bandwidth reserved on every facility port (above the project limit needs Net.NoLimitBW)"
     },
     {
-      "name": "FIU_PUBLIC",
-      "label": "FIU public uplink",
-      "type": "string",
-      "required": false,
-      "default": "AmLight-Layer3-FIU",
-      "description": "How Globus reaches the FIU endpoint (443): 'ext' = FABnetv4Ext, or an L3 facility port name"
-    },
-    {
-      "name": "FIU_PUBLIC_VLAN",
-      "label": "FIU public VLAN",
-      "type": "string",
-      "required": false,
-      "default": "3002",
-      "description": "VLAN AmLight assigned on AmLight-Layer3-FIU"
-    },
-    {
-      "name": "FIU_PUBLIC_ADDR",
-      "label": "FIU public address",
-      "type": "string",
-      "required": false,
-      "default": "67.17.206.74/29",
-      "description": "FIU DTN public IPv4 (CIDR) from AmLight's 67.17.206.72/29; .73 is the gateway"
-    },
-    {
-      "name": "FIU_PUBLIC_GW",
-      "label": "FIU public gateway",
+      "name": "PUBLIC",
+      "label": "Public uplink",
       "type": "string",
       "required": false,
       "default": "",
-      "description": "Blank = first usable address of the subnet (AmLight convention: 67.17.206.73)"
+      "placeholder": "FIU: AmLight-Layer3-FIU · CIEN: ext",
+      "description": "How Globus reaches the DTN: an L3 facility port name, or 'ext' = FABNetv4Ext."
     },
     {
-      "name": "FIU_PUBLIC_ADDR6",
-      "label": "FIU public IPv6",
-      "type": "string",
-      "required": false,
-      "default": "2800:bc0:9000:3002::2/64",
-      "description": "FIU DTN public IPv6 (CIDR) from AmLight's 2800:bc0:9000:3002::/64; blank = IPv4 only"
-    },
-    {
-      "name": "FIU_PUBLIC_GW6",
-      "label": "FIU public IPv6 gateway",
+      "name": "PUBLIC_VLAN",
+      "label": "Public VLAN",
       "type": "string",
       "required": false,
       "default": "",
-      "description": "Blank = first usable address (2800:bc0:9000:3002::1)"
+      "placeholder": "FIU: 3002 · CIEN: auto",
+      "description": "VLAN on the public facility port (auto = first free). Ignored for 'ext'."
     },
     {
-      "name": "FIU_L2_IP",
-      "label": "FIU L2 address",
-      "type": "string",
-      "required": false,
-      "default": "10.14.0.60/24",
-      "description": "FIU DTN address on the Cape Town VLAN (Cape Town is 10.14.0.50). Refused if another host already answers for it."
-    },
-    {
-      "name": "FIU_L2_FP",
-      "label": "FIU L2 facility port",
-      "type": "string",
-      "required": false,
-      "default": "AmLight-EXP-Layer2-FIU",
-      "description": "Facility port for the FIU data path (FABRIC allows VLANs 4000-4094 on it)"
-    },
-    {
-      "name": "FIU_L2_VLAN",
-      "label": "FIU L2 VLAN",
-      "type": "string",
-      "required": false,
-      "default": "auto",
-      "description": "VLAN on FIU_L2_FP; auto = first free in 4000-4094. The operators map it to Cape Town's VLAN 1400 on the switch - the weave prints which one it took."
-    },
-    {
-      "name": "FIU_PEER_IP",
-      "label": "Cape Town IP (FIU VLAN)",
-      "type": "string",
-      "required": false,
-      "default": "10.14.0.50",
-      "description": "The Cape Town DTN's address on the FIU data VLAN"
-    },
-    {
-      "name": "FIU_HOST",
-      "label": "FIU host",
+      "name": "PUBLIC_ADDR",
+      "label": "Public IPv4 address",
       "type": "string",
       "required": false,
       "default": "",
-      "description": "Pin the FIU DTN VM to a worker, e.g. fiu-w1.fabric-testbed.net (blank = FABRIC picks)"
+      "placeholder": "FIU: 67.17.206.74/29 · CIEN: from FABNetv4Ext",
+      "description": "IPv4 CIDR on the public facility port (assigned by the facility). Ignored for 'ext'."
     },
     {
-      "name": "CIEN_PUBLIC",
-      "label": "CIEN public uplink (only if Build CIEN)",
-      "type": "string",
-      "required": false,
-      "default": "ext",
-      "description": "How Globus reaches the CIEN endpoint: 'ext' = FABnetv4Ext, or an L3 facility port name (then set CIEN_PUBLIC_ADDR/GW in the environment)"
-    },
-    {
-      "name": "CIEN_PUBLIC_VLAN",
-      "label": "CIEN public VLAN (only if Build CIEN)",
-      "type": "string",
-      "required": false,
-      "default": "auto",
-      "description": "Only when CIEN_PUBLIC is a facility port: its VLAN (auto = first free)"
-    },
-    {
-      "name": "CIEN_PUBLIC_ADDR",
-      "label": "CIEN public address (only if Build CIEN)",
+      "name": "PUBLIC_GW",
+      "label": "Public IPv4 gateway",
       "type": "string",
       "required": false,
       "default": "",
-      "description": "Only when CIEN_PUBLIC is a facility port: IPv4 CIDR"
+      "placeholder": "first usable address of the subnet",
+      "description": "Blank = the first usable address of PUBLIC_ADDR's subnet."
     },
     {
-      "name": "CIEN_PUBLIC_GW",
-      "label": "CIEN public gateway (only if Build CIEN)",
+      "name": "PUBLIC_ADDR6",
+      "label": "Public IPv6 address",
       "type": "string",
       "required": false,
       "default": "",
-      "description": "Blank = first usable address"
+      "placeholder": "FIU: 2800:bc0:9000:3002::2/64 · CIEN: none",
+      "description": "IPv6 CIDR on the public facility port (blank at CIEN = IPv4 only)."
     },
     {
-      "name": "CIEN_PUBLIC_ADDR6",
-      "label": "CIEN public IPv6 (only if Build CIEN)",
+      "name": "PUBLIC_GW6",
+      "label": "Public IPv6 gateway",
       "type": "string",
       "required": false,
       "default": "",
-      "description": "Only when CIEN_PUBLIC is a facility port: IPv6 CIDR"
+      "placeholder": "first usable address (::1)",
+      "description": "Blank = the first usable address of PUBLIC_ADDR6's prefix."
     },
     {
-      "name": "CIEN_PUBLIC_GW6",
-      "label": "CIEN public IPv6 gateway (only if Build CIEN)",
+      "name": "L2_FP",
+      "label": "Data facility port",
       "type": "string",
       "required": false,
       "default": "",
-      "description": "Blank = first usable address"
+      "placeholder": "FIU: AmLight-EXP-Layer2-FIU · CIEN: FP2-CIEN",
+      "description": "L2 facility port toward the Cape Town DTN."
     },
     {
-      "name": "CIEN_L2_IP",
-      "label": "CIEN L2 address (only if Build CIEN)",
-      "type": "string",
-      "required": false,
-      "default": "10.29.1.60/24",
-      "description": "CIEN DTN address on the Cape Town VLAN (Cape Town is 10.29.1.50)"
-    },
-    {
-      "name": "CIEN_L2_FP",
-      "label": "CIEN L2 facility port (only if Build CIEN)",
-      "type": "string",
-      "required": false,
-      "default": "FP2-CIEN",
-      "description": "Facility port for the CIEN data path"
-    },
-    {
-      "name": "CIEN_L2_VLAN",
-      "label": "CIEN L2 VLAN (only if Build CIEN)",
-      "type": "string",
-      "required": false,
-      "default": "2901",
-      "description": "VLAN on CIEN_L2_FP (auto = first free)"
-    },
-    {
-      "name": "CIEN_PEER_IP",
-      "label": "Cape Town IP (CIEN VLAN) (only if Build CIEN)",
-      "type": "string",
-      "required": false,
-      "default": "10.29.1.50",
-      "description": "The Cape Town DTN's address on the CIEN data VLAN"
-    },
-    {
-      "name": "CIEN_HOST",
-      "label": "CIEN host (only if Build CIEN)",
+      "name": "L2_VLAN",
+      "label": "Data VLAN",
       "type": "string",
       "required": false,
       "default": "",
-      "description": "Pin the CIEN DTN VM to a worker, e.g. cien-w1.fabric-testbed.net (blank = FABRIC picks)"
+      "placeholder": "FIU: auto (4000-4094) · CIEN: 2901",
+      "description": "VLAN on the data port (auto = first free). At FIU the operators map it to Cape Town's VLAN 1400."
+    },
+    {
+      "name": "L2_IP",
+      "label": "DTN data address",
+      "type": "string",
+      "required": false,
+      "default": "",
+      "placeholder": "FIU: 10.14.0.60/24 · CIEN: 10.29.1.60/24",
+      "description": "This DTN's address on the Cape Town VLAN."
+    },
+    {
+      "name": "PEER_IP",
+      "label": "Cape Town data address",
+      "type": "string",
+      "required": false,
+      "default": "",
+      "placeholder": "FIU: 10.14.0.50 · CIEN: 10.29.1.50",
+      "description": "The Cape Town DTN's address on the same VLAN."
+    },
+    {
+      "name": "HOST",
+      "label": "Worker host",
+      "type": "string",
+      "required": false,
+      "default": "",
+      "placeholder": "FABRIC picks · e.g. fiu-w1.fabric-testbed.net",
+      "description": "Pin the VM to a worker (blank = FABRIC picks)."
     },
     {
       "name": "GLOBUS_USERS",

@@ -82,27 +82,25 @@ def parse_users(spec: str) -> dict:
     return out
 
 
-def is_on(v: str) -> bool:
-    return v.strip().lower() in ("true", "1", "yes", "on")
+LEG_KEYS = (("PUBLIC", "ext"), ("PUBLIC_VLAN", "auto"), ("PUBLIC_ADDR", ""), ("PUBLIC_GW", ""),
+            ("PUBLIC_ADDR6", ""), ("PUBLIC_GW6", ""),
+            ("L2_FP", ""), ("L2_VLAN", ""), ("L2_IP", ""), ("PEER_IP", ""), ("HOST", ""))
 
 
-def selected_sites() -> list:
-    """DTN_SITES (e.g. FIU,CIEN) wins when set - handy from the shell; otherwise the
-    BUILD_FIU / BUILD_CIEN checkboxes of the weave form (FIU on, CIEN off)."""
-    if env("DTN_SITES"):
-        return [s.strip().upper() for s in env("DTN_SITES").split(",") if s.strip()]
-    return [s for s, dflt in (("FIU", "true"), ("CIEN", "false")) if is_on(env(f"BUILD_{s}", dflt))]
+def selected_site() -> str:
+    """The one site this run builds or acts on: SITE (FIU or CIEN, default FIU)."""
+    site = env("SITE", "FIU").upper()
+    if site not in SITE_DEFAULTS:
+        die(f"SITE must be one of {', '.join(SITE_DEFAULTS)}, not '{site}'")
+    return site
 
 
 def load_config() -> dict:
-    sites = selected_sites()
-    legs = {}
-    for s in sites:
-        d = SITE_DEFAULTS.get(s, {})
-        legs[s] = {k.lower(): env(f"{s}_{k}", d.get(k, dv)) for k, dv in (
-            ("PUBLIC", "ext"), ("PUBLIC_VLAN", "auto"), ("PUBLIC_ADDR", ""), ("PUBLIC_GW", ""),
-            ("PUBLIC_ADDR6", ""), ("PUBLIC_GW6", ""),
-            ("L2_FP", ""), ("L2_VLAN", ""), ("L2_IP", ""), ("PEER_IP", ""), ("HOST", ""))}
+    site = selected_site()
+    sites = [site]
+    # Each field: the form's value, else <SITE>_<KEY> (shell), else the site's default.
+    d = SITE_DEFAULTS[site]
+    legs = {site: {k.lower(): env(k) or env(f"{site}_{k}", d.get(k, dv)) for k, dv in LEG_KEYS}}
     return {
         "sites": sites,
         "legs": legs,
@@ -613,12 +611,10 @@ def check_tags(cfg: dict, proj: dict) -> None:
 
 def start(prefix: str) -> None:
     cfg = load_config()
-    if not cfg["sites"]:
-        die("DTN_SITES is empty")
     for s in cfg["sites"]:
         leg = cfg["legs"][s]
         if not (leg["l2_fp"] and leg["l2_vlan"] and leg["l2_ip"] and leg["peer_ip"]):
-            die(f"{s} needs {s}_L2_FP, {s}_L2_VLAN, {s}_L2_IP and {s}_PEER_IP")
+            die(f"{s} needs L2_FP, L2_VLAN, L2_IP and PEER_IP")
     creds_from_args(cfg)
     for w in globus_ready(cfg):
         say(f"NOTE — {w}; endpoints will be built but not registered with Globus.")
@@ -628,9 +624,11 @@ def start(prefix: str) -> None:
     prev = read_previous(prefix)
     proj = token_project(fablib)
     say(f"FABRIC project {proj.get('name', '?')} ({proj.get('uuid', fablib.get_project_id())}) | "
-        f"DTN sites {', '.join(cfg['sites'])}")
+        f"DTN site {', '.join(cfg['sites'])}")
     check_tags(cfg, proj)
-    res = {"prefix": prefix, "legs": {}}
+    # One site per run; keep the other site's entry (a run of the same prefix at the
+    # other site) so the notebook, status and stop still see both DTNs.
+    res = {"prefix": prefix, "legs": dict(prev.get("legs", {}))}
 
     ok = True
     for site in cfg["sites"]:
@@ -748,6 +746,7 @@ def stop(prefix: str) -> None:
         name = res.get("legs", {}).get(site, {}).get("slice", names[site])
         s = get_live(fablib, name)
         if s is None:
+            forget_leg(res, site)
             continue
         try:
             remove_endpoint(s.get_node(name=NODE), site)
@@ -761,7 +760,15 @@ def stop(prefix: str) -> None:
             say(f"{site}: WARNING — endpoint removal failed ({exc}); FORCE_DELETE=true, deleting anyway.")
         say(f"{site}: deleting slice {name}")
         s.delete()
+        forget_leg(res, site)
     sys.exit(1 if failed else 0)
+
+
+def forget_leg(res: dict, site: str) -> None:
+    """Drop a deleted site from results/legs.json; the other site's entry stays."""
+    if site in res.get("legs", {}):
+        res["legs"].pop(site)
+        write_results(res)
 
 
 if __name__ == "__main__":

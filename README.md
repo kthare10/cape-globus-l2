@@ -28,13 +28,13 @@ Both ends sit in one subnet and nothing is routed.
 
 | site | facility port | FABRIC VLAN | DTN address | Cape Town DTN |
 |---|---|---|---|---|
-| FIU | `AmLight-EXP-Layer2-FIU` | first free in 4000-4094 (`FIU_L2_VLAN=auto`) | `10.14.0.60/24` | `10.14.0.50` (VLAN 1400 on their side) |
+| FIU | `AmLight-EXP-Layer2-FIU` | first free in 4000-4094 (`L2_VLAN` blank = auto) | `10.14.0.60/24` | `10.14.0.50` (VLAN 1400 on their side) |
 | CIEN | `FP2-CIEN` | 2901 | `10.29.1.60/24` | `10.29.1.50` |
 
 FABRIC only allows 4000-4094 on `AmLight-EXP-Layer2-FIU`, so the weave takes a VLAN from that range. The
 **operators map it to Cape Town's VLAN 1400 on the switch**. The weave prints the VLAN it took
 (`>>> data VLAN is ... <<<`) and records it in `results/legs.json`. To keep the same VLAN across rebuilds, set
-`FIU_L2_VLAN` to that number.
+`L2_VLAN` to that number.
 
 ## Data path choice: VLAN or public
 
@@ -56,10 +56,13 @@ red public line, then green VLAN line.
 |---|---|
 | `<prefix>-fiu`, `<prefix>-cien` | one Rocky 9 DTN each: public NIC, data NIC, GCS, one mapped collection |
 
-The **Build FIU DTN** and **Build CIEN DTN** checkboxes (`BUILD_FIU`, `BUILD_CIEN`) pick the sites. Only FIU is
-built by default, while CIEN is offline, and the CIEN fields are ignored unless Build CIEN is on. From the shell,
-`DTN_SITES=FIU`, `CIEN` or `FIU,CIEN` overrides the checkboxes. Each site has its own slice, so a failure at one
-doesn't block the other. Status, extend and stop only touch the selected sites.
+Each run builds **one site**, chosen with `SITE` (`FIU`, the default while CIEN is offline, or `CIEN`). The
+network fields (`PUBLIC*`, `L2_*`, `PEER_IP`, `HOST`) are left blank to use that site's defaults; the form shows
+both sites' defaults greyed out in each field. From the shell, `FIU_L2_VLAN=...` style names work too.
+
+For both DTNs, run the weave twice with the same prefix, once with `SITE=FIU` and once with `SITE=CIEN`.
+`results/legs.json` keeps both entries, so the notebook and status see both. Stop acts on the `SITE`
+given; a stopped site is dropped from `results/legs.json`.
 
 ## Before you run it
 
@@ -78,8 +81,8 @@ doesn't block the other. Status, extend and stop only touch the selected sites.
 3. **FIU public address.** AmLight assigned VLAN 3002 on `AmLight-Layer3-FIU`, `67.17.206.72/29` and
    `2800:bc0:9000:3002::/64`, with the gateway at the first usable address. The defaults are `67.17.206.74/29`
    via `.73` and `2800:bc0:9000:3002::2/64` via `::1`, so the FIU endpoint is dual-stack. With a blank
-   `*_PUBLIC_GW`, the gateway defaults to the first usable address. The weave checks that the outside world sees
-   these addresses (no NAT). CIEN uses FABnetv4Ext (`CIEN_PUBLIC=ext`).
+   `PUBLIC_GW`, the gateway defaults to the first usable address. The weave checks that the outside world sees
+   these addresses (no NAT). CIEN uses FABnetv4Ext (`PUBLIC=ext`, its default).
 4. **FABRIC project tags.** You need `Net.FacilityPort.<port>` (or `Net.AllFacilityPorts`), `Net.FABNetv4Ext` for
    `ext`, and `VM.NoLimit*` for the default VM size. The weave and notebook use the default FABRIC
    config, token and project as set in `fabric_rc` / LoomAI's Configure view, and never override them. The
@@ -90,10 +93,11 @@ doesn't block the other. Status, extend and stop only touch the selected sites.
 ## Running
 
 ```bash
-./weave.sh cape-globus                  # build / resume (idempotent; never registers an endpoint twice)
-ACTION=status ./weave.sh cape-globus    # route + ping to Cape Town from each DTN
-ACTION=extend ./weave.sh cape-globus
-KEEP_SLICE=false ./weave_cleanup.sh cape-globus   # endpoints, then slices
+./weave.sh cape-globus                  # FIU: build / resume (idempotent; never registers an endpoint twice)
+SITE=CIEN ./weave.sh cape-globus        # CIEN, same prefix (adds to results/legs.json)
+ACTION=status ./weave.sh cape-globus    # route + ping to Cape Town from each DTN built
+ACTION=extend ./weave.sh cape-globus    # renew every DTN slice of this prefix
+ACTION=stop ./weave.sh cape-globus      # FIU endpoint, then its slice (SITE=CIEN for CIEN)
 ```
 
 Then open `globus_transfer_demo.ipynb`. It checks route, MTU and iperf3, shows what each endpoint advertises, and
