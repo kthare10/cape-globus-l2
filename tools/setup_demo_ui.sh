@@ -24,6 +24,8 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 dnf install -y -q python3 python3-pip iperf3 iproute >/dev/null
 install -d -m 0755 "$DEST" /etc/globus-dtn
 install -m 0644 "$HERE/demo_ui/app.py" "$HERE/demo_ui/index.html" "$DEST/"
+install -d -m 0755 "$DEST/static"
+install -m 0644 "$HERE"/demo_ui/static/* "$DEST/static/"
 install -m 0644 "$CONF" /etc/globus-dtn/demo.json
 install -m 0755 "$HERE/set_data_path.sh" /usr/local/sbin/globus-dtn-data-path
 [ -x "$DEST/venv/bin/python" ] || python3 -m venv "$DEST/venv"

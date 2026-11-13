@@ -372,6 +372,11 @@ def index():
     return send_from_directory(HERE, "index.html")
 
 
+@app.get("/static/<path:name>")
+def static_file(name):
+    return send_from_directory(os.path.join(HERE, "static"), name, max_age=3600)
+
+
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--host", default="127.0.0.1")

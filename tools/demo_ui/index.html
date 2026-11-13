@@ -18,7 +18,25 @@
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--bg); color: var(--ink);
          font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
-  header { padding: 22px 28px 8px; }
+  header { padding: 22px 28px 8px; display: flex; gap: 18px; align-items: center; justify-content: space-between; flex-wrap: wrap; }
+  .logos { display: flex; gap: 14px; align-items: center; background: #fff; border: 1px solid var(--line);
+           border-radius: 12px; padding: 8px 14px; }
+  .logos img { display: block; max-width: 100%; height: auto; max-height: 46px; }
+  .logos a:first-child img { max-height: 34px; }
+  .s6 { grid-column: span 6; }
+  .netmap { position: relative; margin: 0; }
+  .netmap svg { display: block; width: 100%; height: auto; border-radius: 8px; }
+  .netmap figcaption { margin-top: 6px; }
+  .route-glow { fill: none; stroke: #fff; stroke-width: 16; opacity: .55; stroke-linecap: round; }
+  .route { fill: none; stroke: #39ff88; stroke-width: 7; stroke-linecap: round; stroke-dasharray: 18 12; }
+  .netmap .flowing { animation: dash2 .7s linear infinite; }
+  @keyframes dash2 { to { stroke-dashoffset: -30; } }
+  .pin { fill: #39ff88; stroke: #fff; stroke-width: 3; }
+  .pin-pulse { fill: none; stroke: #39ff88; stroke-width: 3; transform-box: fill-box; transform-origin: center;
+               animation: pulse 1.8s ease-out infinite; }
+  @keyframes pulse { from { transform: scale(.4); opacity: 1; } to { transform: scale(1.6); opacity: 0; } }
+  .netmap svg text { fill: #fff; font-weight: 700; paint-order: stroke; stroke: rgba(0,0,0,.7); stroke-width: 3px; }
+  .netmap svg text.dark { fill: #145a32; stroke: rgba(255,255,255,.95); stroke-width: 8px; }
   h1 { margin: 0; font-size: 26px; }
   header p { margin: 4px 0 0; color: var(--muted); }
   main { padding: 12px 28px 32px; display: grid; gap: 16px; grid-template-columns: repeat(12, 1fr); }
@@ -27,7 +45,7 @@
   .s3 { grid-column: span 3; } .s4 { grid-column: span 4; } .s5 { grid-column: span 5; }
   .s7 { grid-column: span 7; } .s8 { grid-column: span 8; } .s12 { grid-column: span 12; }
   @media (max-width: 1000px) { main { grid-template-columns: 1fr; padding: 12px 16px; }
-    .s3,.s4,.s5,.s7,.s8,.s12 { grid-column: auto; } header { padding: 18px 16px 4px; } }
+    .s3,.s4,.s5,.s6,.s7,.s8,.s12 { grid-column: auto; } header { padding: 18px 16px 4px; } }
   .kv { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; font-size: 14px; }
   .kv b { color: var(--muted); font-weight: 500; }
   .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; }
@@ -61,8 +79,14 @@
 </head>
 <body>
 <header>
-  <h1>Globus · Cape Town ⇄ FABRIC <span id="site">…</span></h1>
-  <p>Globus control goes over the public internet. The data goes over the research VLAN, because that's the address this endpoint advertises.</p>
+  <div>
+    <h1>Globus · Cape Town ⇄ FABRIC <span id="site">…</span></h1>
+    <p>Globus control goes over the public internet. The data goes over the research VLAN, because that's the address this endpoint advertises.</p>
+  </div>
+  <div class="logos" aria-label="Networks">
+    <a href="https://fabric-testbed.net" target="_blank" rel="noopener"><img src="static/fabric-logo.png" alt="FABRIC" height="34"></a>
+    <a href="https://www.amlight.net" target="_blank" rel="noopener"><img src="static/amlight-logo.jpg" alt="AmLight" height="46"></a>
+  </div>
 </header>
 <main>
   <section class="card s8">
@@ -114,6 +138,36 @@
     <div class="row"><button id="btnDpVlan">Data via VLAN</button><button id="btnDpPub">Data via public</button></div>
     <div class="row"><button id="btnRecheck">Re-check path</button><button id="btnIperf">iperf3 baseline</button></div>
     <div class="note" id="iperfOut"></div>
+  </section>
+
+  <section class="card s6">
+    <h2>On AmLight · Cape Town to Miami</h2>
+    <figure class="netmap">
+      <svg viewBox="0 0 1024 737" role="img" aria-label="AmLight network map with the Cape Town route highlighted">
+        <image href="static/amlight-map.jpg" width="1024" height="737"/>
+        <path class="route-glow" d="M 982 583 Q 965 525 937 477 Q 790 372 606 384 Q 520 230 318 162 L 316 180"/>
+        <path class="route net-flow" d="M 982 583 Q 965 525 937 477 Q 790 372 606 384 Q 520 230 318 162 L 316 180"/>
+        <circle class="pin-pulse" cx="982" cy="583" r="22"/><circle class="pin" cx="982" cy="583" r="9"/>
+        <circle class="pin-pulse" cx="316" cy="180" r="22"/><circle class="pin" cx="316" cy="180" r="9"/>
+        <text x="660" y="345" style="font-size:40px">Cape Town VLAN</text>
+      </svg>
+      <figcaption class="note">AmLight Express and Protect carry the Cape Town VLAN from SANReN (Sangano, Fortaleza) into Miami. The route shown is approximate.</figcaption>
+    </figure>
+  </section>
+
+  <section class="card s6">
+    <h2>Into FABRIC · FIU/AMPATH</h2>
+    <figure class="netmap">
+      <svg viewBox="0 0 1955 941" role="img" aria-label="FABRIC network map with the Cape Town link highlighted">
+        <image href="static/fabric-map.jpg" width="1955" height="941"/>
+        <path class="route-glow" d="M 1710 895 Q 1450 770 1170 806 Q 1185 750 1222 694"/>
+        <path class="route net-flow" d="M 1710 895 Q 1450 770 1170 806 Q 1185 750 1222 694"/>
+        <circle class="pin-pulse" cx="1222" cy="694" r="34"/><circle class="pin" cx="1222" cy="694" r="13"/>
+        <circle class="pin-pulse" cx="1710" cy="895" r="34"/><circle class="pin" cx="1710" cy="895" r="13"/>
+        <text x="1250" y="655" style="font-size:58px" class="dark" id="fabMapLabel">FABRIC DTN</text>
+      </svg>
+      <figcaption class="note">The VLAN enters FABRIC through the facility port at FIU/AMPATH and lands on the DTN's data NIC.</figcaption>
+    </figure>
   </section>
 
   <section class="card s5" id="loginCard">
@@ -188,6 +242,7 @@ async function loadInfo() {
   INFO = await api("/api/info");
   $("site").textContent = INFO.site;
   $("dtnName").textContent = `FABRIC DTN · ${INFO.site}`;
+  $("fabMapLabel").textContent = `FABRIC DTN · ${INFO.site}`;
   $("peerIp").textContent = INFO.peer_ip;
   $("dataIp").textContent = `${INFO.data_ip} (data)`;
   $("dataLabel").textContent = `DATA · FABRIC VLAN ${INFO.l2_vlan ?? "?"} ↔ Cape Town VLAN ${INFO.cape_vlan ?? 1400}`;
@@ -235,6 +290,7 @@ function setFlow(dataOn, pubOn) {
   $("dataLine").classList.toggle("flowing", dataOn);
   $("pubLine").classList.toggle("flowing", pubOn);
   $("pubLine").setAttribute("opacity", pubOn ? "1" : ".35");
+  document.querySelectorAll(".net-flow").forEach(p => p.classList.toggle("flowing", dataOn));
 }
 
 function watch(taskId) {

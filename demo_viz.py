@@ -1,12 +1,14 @@
 """Demo visuals for globus_transfer_demo.ipynb (run in the notebook kernel).
 
 - path_map():     world map - AmLight, the Cape Town <-> FABRIC data path, the DTNs
+- network_maps(): the AmLight and FABRIC network maps with the Cape Town path highlighted
 - LivePathPlot:   live chart during a transfer - Gb/s and bytes per path (data NIC vs public)
 - path_summary(): one-glance result card after a transfer
 """
 
 from __future__ import annotations
 
+import os
 import time
 
 import matplotlib.pyplot as plt
@@ -93,6 +95,63 @@ def path_map(fablib, legs: dict):
                     lataxis_range=[-45, 55], lonaxis_range=[-110, 40])
     fig.update_layout(title="Globus between Cape Town and FABRIC: control on the internet, data on the research VLAN",
                       height=560, margin=dict(l=0, r=0, t=50, b=0), legend=dict(orientation="h", y=-0.02))
+    return fig
+
+
+STATIC = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tools", "demo_ui", "static")
+# Route overlays in image pixels, the same paths the web UI draws (start, then (control, end) pairs:
+# quadratic Bezier segments; control None = straight line).
+MAP_ROUTES = {
+    "amlight-map.jpg": dict(start=(982, 583), segs=[((965, 525), (937, 477)), ((790, 372), (606, 384)),
+                                                    ((520, 230), (318, 162)), (None, (316, 180))],
+                            pins=[(982, 583), (316, 180)], label=((690, 345), "Cape Town VLAN"),
+                            title="On AmLight: Cape Town to Miami (route approximate)"),
+    "fabric-map.jpg": dict(start=(1710, 895), segs=[((1450, 770), (1170, 806)), ((1185, 750), (1222, 694))],
+                           pins=[(1222, 694), (1710, 895)], label=((1255, 650), "FABRIC DTN"),
+                           title="Into FABRIC at FIU/AMPATH", src_w=1955),
+}
+
+
+def _bezier(start, segs, n=40):
+    xs, ys = [start[0]], [start[1]]
+    p0 = start
+    for ctrl, end in segs:
+        for i in range(1, n + 1):
+            t = i / n
+            if ctrl is None:
+                x, y = p0[0] + (end[0] - p0[0]) * t, p0[1] + (end[1] - p0[1]) * t
+            else:
+                x = (1 - t) ** 2 * p0[0] + 2 * (1 - t) * t * ctrl[0] + t ** 2 * end[0]
+                y = (1 - t) ** 2 * p0[1] + 2 * (1 - t) * t * ctrl[1] + t ** 2 * end[1]
+            xs.append(x), ys.append(y)
+        p0 = end
+    return xs, ys
+
+
+def network_maps(site_label: str = "FIU"):
+    """The AmLight and FABRIC network maps with the Cape Town data path highlighted."""
+    import matplotlib.image as mpimg
+    import matplotlib.patheffects as pe
+
+    fig, axes = plt.subplots(1, 2, figsize=(15, 5.6), gridspec_kw={"width_ratios": [1.0, 1.45]})
+    for ax, (name, r) in zip(axes, MAP_ROUTES.items()):
+        img = mpimg.imread(os.path.join(STATIC, name))
+        scale = img.shape[1] / r.get("src_w", img.shape[1])     # overlay coords are in source pixels
+        ax.imshow(img)
+        xs, ys = _bezier(r["start"], r["segs"])
+        xs, ys = [x * scale for x in xs], [y * scale for y in ys]
+        ax.plot(xs, ys, color="white", lw=9, alpha=.55, solid_capstyle="round")
+        ax.plot(xs, ys, color="#39ff88", lw=4, ls=(0, (4, 2.5)), solid_capstyle="round")
+        for px, py in r["pins"]:
+            ax.plot(px * scale, py * scale, "o", ms=11, color="#39ff88", mec="white", mew=2)
+        (lx, ly), text = r["label"]
+        if text == "FABRIC DTN":
+            text = f"FABRIC DTN · {site_label}"
+        ax.text(lx * scale, ly * scale, text, color="white", fontsize=12, weight="bold",
+                path_effects=[pe.withStroke(linewidth=3, foreground="black")])
+        ax.set_title(r["title"], fontsize=12, loc="left")
+        ax.axis("off")
+    fig.tight_layout()
     return fig
 
 

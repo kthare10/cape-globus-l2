@@ -103,6 +103,10 @@ LoomAI's tunnel feature works too (port 8080 on the `dtn` node). The page provid
 - **The path:** a diagram of the Globus cloud, the Cape Town DTN and the FABRIC DTN. The research-VLAN line
   animates while bytes flow on the data NIC. The public line stays dim, and lights up only if data goes over the
   public uplink.
+- **The networks:** FABRIC and AmLight logos, and the AmLight and FABRIC network maps with the Cape Town path
+  drawn on top (Cape Town → Sangano → Fortaleza → Miami on AmLight, into FABRIC at FIU/AMPATH). The route
+  animates with the diagram while data flows. The notebook shows the same maps (`demo_viz.network_maps()`)
+  and has the same VLAN/public data-path switch (section 4b).
 - **Status:** whether Cape Town is reachable, the route (it must be the data NIC), RTT, jumbo frames, whether
   the endpoint is registered, and Globus sign-in. Buttons re-check the path and run an iperf3 baseline (needs
   `iperf3 -s` on the Cape Town side).
@@ -113,7 +117,7 @@ LoomAI's tunnel feature works too (port 8080 on the `dtn` node). The page provid
 - **Live results:** a Gb/s chart for the research VLAN vs. the public uplink, totals, the data connections, and
   a verdict when the transfer ends.
 
-Code: `tools/demo_ui/` (Flask, plus one HTML page using Chart.js), installed by `tools/setup_demo_ui.sh` as the
+Code: `tools/demo_ui/` (Flask, plus one HTML page using Chart.js; logos and maps in `tools/demo_ui/static/`), installed by `tools/setup_demo_ui.sh` as the
 `globus-demo-ui` systemd service.
 
 ## Safety
