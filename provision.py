@@ -68,12 +68,17 @@ def env(key: str, default: str = "") -> str:
 
 
 def parse_users(spec: str) -> dict:
-    """'alice@uni.edu=alice,bob@uni.edu=bob' -> {identity: account}."""
+    """'alice@uni.edu=alice,bob@uni.edu' -> {identity: account}. Without '=account', the
+    account is the part before '@', made a valid Linux name (bob.smith -> bob_smith)."""
     out = {}
     for item in filter(None, (s.strip() for s in spec.split(","))):
-        ident, _, acct = item.partition("=")
+        ident, _, acct = (x.strip() for x in item.partition("="))
+        if ident and not acct:
+            acct = re.sub(r"[^a-z0-9_-]", "_", ident.split("@")[0].lower())[:32]
+            if not re.match(r"[a-z_]", acct):
+                acct = ("u" + acct)[:32]
         if ident and acct:
-            out[ident.strip()] = acct.strip()
+            out[ident] = acct
     return out
 
 

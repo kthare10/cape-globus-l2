@@ -73,7 +73,7 @@ doesn't block the other. Status, extend and stop only touch the selected sites.
 
    NOTE: LoomAI keeps a run's args in `weave.json` (`active_run`) while the run is going, so the secret sits there
    until the run ends. Use the file if that matters to you.
-2. **Args.** Set `GLOBUS_USERS` (`identity=account,...`) and `GLOBUS_CONTACT_EMAIL`. Without them the VMs are still
+2. **Args.** Set `GLOBUS_USERS` (`identity` or `identity=account`, comma-separated; a bare identity maps to the part before `@`) and `GLOBUS_CONTACT_EMAIL`. Without them the VMs are still
    built and the path is checked, but no endpoint is registered.
 3. **FIU public address.** AmLight assigned VLAN 3002 on `AmLight-Layer3-FIU`, `67.17.206.72/29` and
    `2800:bc0:9000:3002::/64`, with the gateway at the first usable address. The defaults are `67.17.206.74/29`
