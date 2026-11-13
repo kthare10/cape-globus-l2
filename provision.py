@@ -244,28 +244,9 @@ def pick_fp(fablib, site: str, vlan: str, name: str | None, l2_only: bool) -> tu
     if len(hits) > 1:
         raise LegError(f"several ports at {site} advertise VLAN {v} "
                        f"({', '.join(r['name'] for r in hits)}); set the port name.")
-    r = hits[0]
-    if v in set(vlan_list(r.get("allocated_vlans", "[]"))):
-        try:
-            live = [s.get_name() for s in fablib.get_slices()]
-        except Exception:
-            live = []
-        mine = f" Your live slices: {', '.join(live)}." if live else ""
-        if l2_only:
-            fix = ("Delete the slice that holds it, or pick another VLAN from the range and have it "
-                   "mapped to Cape Town's VLAN on the switch.")
-        else:
-            fix = ("This is the public VLAN AmLight assigned with your public addresses, so it can't simply "
-                   "be changed: delete the slice that holds it (an earlier run of this weave, e.g. "
-                   "<prefix>-fiu) and re-run, or re-run with that slice's prefix to reuse it.")
-        msg = f"VLAN {v} on {r['name']} is listed as allocated to another slice. {fix}{mine}"
-        if name:
-            # FABRIC's port listing keeps a VLAN 'in use' for a while after its slice is
-            # deleted, so for a port named explicitly let the submit make the final call.
-            say(f"WARNING — {msg} If that slice was just deleted, the listing can lag; trying anyway.")
-            return r["name"], v
-        raise LegError(msg)
-    return r["name"], v
+    # No "VLAN already allocated" check here: the control framework rejects the submit
+    # if the VLAN is taken, and the port listing can lag behind deleted slices.
+    return hits[0]["name"], v
 
 
 def add_fp(slice_obj, name: str, site: str, vlan, bw: int, mtu: int | None = None):
