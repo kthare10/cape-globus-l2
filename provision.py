@@ -38,7 +38,7 @@ import re
 import shlex
 import sys
 
-from fabric_env import LEGS_FILE, PROJECT_NAME, RESULTS_DIR, WEAVE_DIR, get_fablib
+from fabric_env import LEGS_FILE, RESULTS_DIR, WEAVE_DIR, get_fablib, token_project
 
 IMAGE = "default_rocky_9"
 NODE = "dtn"
@@ -575,6 +575,30 @@ def write_results(res: dict) -> None:
         json.dump(res, fh, indent=2, default=str)
 
 
+def check_tags(cfg: dict, proj: dict) -> None:
+    """Warn early when the project lacks the tags FABRIC's policy check will ask for
+    (the submit would fail with 'PDP Failure ... lacking Net.FacilityPort.<name>')."""
+    tags = set(proj.get("tags") or [])
+    if not tags:
+        return
+    need = set()
+    for s in cfg["sites"]:
+        leg = cfg["legs"][s]
+        if leg["l2_fp"]:
+            need.add(f"Net.FacilityPort.{leg['l2_fp']}")
+        if leg["public"] == "ext":
+            need.add("Net.FABNetv4Ext")
+        elif leg["public"]:
+            need.add(f"Net.FacilityPort.{leg['public']}")
+    if "Net.AllFacilityPorts" in tags:
+        need = {t for t in need if not t.startswith("Net.FacilityPort.")}
+    missing = sorted(need - tags)
+    if missing:
+        say(f"WARNING — project {proj.get('name', '?')} lacks {', '.join(missing)}; FABRIC will refuse the "
+            "slice. Switch to a project that has them (LoomAI: Configure > project, then refresh the token), "
+            "or set CRYOEM_PROJECT_ID.")
+
+
 def start(prefix: str) -> None:
     cfg = load_config()
     if not cfg["sites"]:
@@ -590,7 +614,10 @@ def start(prefix: str) -> None:
     fablib = get_fablib()
     names = slice_names(prefix, cfg)
     prev = read_previous(prefix)
-    say(f"Project {PROJECT_NAME} | DTN sites {', '.join(cfg['sites'])}")
+    proj = token_project(fablib)
+    say(f"FABRIC project {proj.get('name', '?')} ({proj.get('uuid', fablib.get_project_id())}) | "
+        f"DTN sites {', '.join(cfg['sites'])}")
+    check_tags(cfg, proj)
     res = {"prefix": prefix, "legs": {}}
 
     ok = True

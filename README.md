@@ -81,7 +81,9 @@ doesn't block the other. Status, extend and stop only touch the selected sites.
    `*_PUBLIC_GW`, the gateway defaults to the first usable address. The weave checks that the outside world sees
    these addresses (no NAT). CIEN uses FABnetv4Ext (`CIEN_PUBLIC=ext`).
 4. **FABRIC project tags.** You need `Net.FacilityPort.<port>` (or `Net.AllFacilityPorts`), `Net.FABNetv4Ext` for
-   `ext`, and `VM.NoLimit*` for the default VM size.
+   `ext`, and `VM.NoLimit*` for the default VM size. The weave uses the project your FABRIC token is for
+   (LoomAI's selected project); set `CRYOEM_PROJECT_ID` to force another. It prints the project at the start
+   and warns if one of these tags is missing.
 5. **Switch mapping.** Have the FABRIC VLAN the weave picked at FIU mapped to VLAN 1400 toward Cape Town.
 6. **Cape Town collection.** The demo identity needs R/W on collection `35df6f87-df63-11f1-977e-02ffe3faed53`.
 
