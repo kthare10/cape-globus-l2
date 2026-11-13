@@ -221,7 +221,7 @@
       "name": "GLOBUS_USERS",
       "label": "Globus users",
       "type": "string",
-      "required": false,
+      "required": true,
       "default": "",
       "description": "Globus identities allowed to use the collections, comma-separated: identity or identity=account, e.g. you@unc.edu (account = the part before @) or you@renci.org=komal. Each account is created on the DTN with <dir>/<account>."
     },
@@ -229,7 +229,7 @@
       "name": "GLOBUS_CONTACT_EMAIL",
       "label": "Globus contact email",
       "type": "string",
-      "required": false,
+      "required": true,
       "default": "",
       "description": "Contact shown on the endpoints"
     },
