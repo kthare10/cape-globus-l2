@@ -1,7 +1,7 @@
 {
   "name": "Cape Town Globus Data Path",
   "description": "Globus Connect Server endpoints at FIU and/or CIEN whose data traffic to the SANReN Cape Town DTN runs over an L2 facility-port VLAN, while Globus reaches them on public addresses.",
-  "description_long": "Demonstrates that Globus data can be steered onto a private research path purely by where the endpoints advertise their data interface. Each DTN VM (Rocky 9, one slice per site in DTN_SITES: FIU, CIEN or both) gets a public uplink (AmLight-Layer3-FIU at FIU, FABnetv4Ext at CIEN) on which Globus Connect Server 5.4 is registered, and a data NIC bridged through an L2 facility port (AmLight-EXP-Layer2-FIU at FIU, FP2-CIEN at CIEN) onto the VLAN that reaches the Cape Town DTN; that NIC is GCS's --data-interface. FABRIC offers only VLANs 4000-4094 on AmLight-EXP-Layer2-FIU, so the weave takes a free one and reports it for the operators to map to Cape Town's VLAN 1400 on the switch. The Cape Town side runs Globus Connect Personal, which opens every data connection itself to the advertised address, so the bytes take the VLAN - for transfers submitted from the CLI or the web app alike. The weave checks the address is not already in use, reachability and jumbo frames to Cape Town, the public addresses (no NAT), firewalls the public NIC to 443 + 50000-51000, creates one mapped collection per endpoint, saves each deployment key under results/keys, writes results/legs.json and exits. globus_transfer_demo.ipynb runs transfers to and from the Cape Town collection and proves the path from the DTN's own sockets. Stop deletes each Globus endpoint before its slice, and keeps the slice if that fails.",
+  "description_long": "Demonstrates that Globus data can be steered onto a private research path purely by where the endpoints advertise their data interface. Each DTN VM (Rocky 9, one slice per site: FIU, CIEN or both, picked with the Build FIU / Build CIEN checkboxes; FIU only by default) gets a public uplink (AmLight-Layer3-FIU at FIU, FABnetv4Ext at CIEN) on which Globus Connect Server 5.4 is registered, and a data NIC bridged through an L2 facility port (AmLight-EXP-Layer2-FIU at FIU, FP2-CIEN at CIEN) onto the VLAN that reaches the Cape Town DTN; that NIC is GCS's --data-interface. FABRIC offers only VLANs 4000-4094 on AmLight-EXP-Layer2-FIU, so the weave takes a free one and reports it for the operators to map to Cape Town's VLAN 1400 on the switch. The Cape Town side runs Globus Connect Personal, which opens every data connection itself to the advertised address, so the bytes take the VLAN - for transfers submitted from the CLI or the web app alike. The weave checks the address is not already in use, reachability and jumbo frames to Cape Town, the public addresses (no NAT), firewalls the public NIC to 443 + 50000-51000, creates one mapped collection per endpoint, saves each deployment key under results/keys, writes results/legs.json and exits. globus_transfer_demo.ipynb runs transfers to and from the Cape Town collection and proves the path from the DTN's own sockets. Stop deletes each Globus endpoint before its slice, and keeps the slice if that fails.",
   "run_script": "weave.sh",
   "log_file": "weave.log",
   "cleanup_script": "weave_cleanup.sh",
@@ -18,12 +18,20 @@
       "description": "Prefix for the slices: <prefix>-fiu, <prefix>-cien"
     },
     {
-      "name": "DTN_SITES",
-      "label": "DTN sites",
-      "type": "string",
+      "name": "BUILD_FIU",
+      "label": "Build FIU DTN",
+      "type": "boolean",
       "required": false,
-      "default": "FIU",
-      "description": "Which DTNs to provision: FIU, CIEN, or FIU,CIEN. Each site has its own slice; stop/status/extend touch only the listed sites (CIEN is offline for now)."
+      "default": true,
+      "description": "Build the DTN at FIU (slice <prefix>-fiu): public on AmLight-Layer3-FIU, data on AmLight-EXP-Layer2-FIU."
+    },
+    {
+      "name": "BUILD_CIEN",
+      "label": "Build CIEN DTN",
+      "type": "boolean",
+      "required": false,
+      "default": false,
+      "description": "Build the DTN at CIEN too (slice <prefix>-cien). Off while CIEN is offline; the CIEN fields below are used only when this is on."
     },
     {
       "name": "FP_BW",
@@ -123,7 +131,7 @@
     },
     {
       "name": "CIEN_PUBLIC",
-      "label": "CIEN public uplink",
+      "label": "CIEN public uplink (only if Build CIEN)",
       "type": "string",
       "required": false,
       "default": "ext",
@@ -131,7 +139,7 @@
     },
     {
       "name": "CIEN_PUBLIC_VLAN",
-      "label": "CIEN public VLAN",
+      "label": "CIEN public VLAN (only if Build CIEN)",
       "type": "string",
       "required": false,
       "default": "auto",
@@ -139,7 +147,7 @@
     },
     {
       "name": "CIEN_PUBLIC_ADDR",
-      "label": "CIEN public address",
+      "label": "CIEN public address (only if Build CIEN)",
       "type": "string",
       "required": false,
       "default": "",
@@ -147,7 +155,7 @@
     },
     {
       "name": "CIEN_PUBLIC_GW",
-      "label": "CIEN public gateway",
+      "label": "CIEN public gateway (only if Build CIEN)",
       "type": "string",
       "required": false,
       "default": "",
@@ -155,7 +163,7 @@
     },
     {
       "name": "CIEN_PUBLIC_ADDR6",
-      "label": "CIEN public IPv6",
+      "label": "CIEN public IPv6 (only if Build CIEN)",
       "type": "string",
       "required": false,
       "default": "",
@@ -163,7 +171,7 @@
     },
     {
       "name": "CIEN_PUBLIC_GW6",
-      "label": "CIEN public IPv6 gateway",
+      "label": "CIEN public IPv6 gateway (only if Build CIEN)",
       "type": "string",
       "required": false,
       "default": "",
@@ -171,7 +179,7 @@
     },
     {
       "name": "CIEN_L2_IP",
-      "label": "CIEN L2 address",
+      "label": "CIEN L2 address (only if Build CIEN)",
       "type": "string",
       "required": false,
       "default": "10.29.1.60/24",
@@ -179,7 +187,7 @@
     },
     {
       "name": "CIEN_L2_FP",
-      "label": "CIEN L2 facility port",
+      "label": "CIEN L2 facility port (only if Build CIEN)",
       "type": "string",
       "required": false,
       "default": "FP2-CIEN",
@@ -187,7 +195,7 @@
     },
     {
       "name": "CIEN_L2_VLAN",
-      "label": "CIEN L2 VLAN",
+      "label": "CIEN L2 VLAN (only if Build CIEN)",
       "type": "string",
       "required": false,
       "default": "2901",
@@ -195,7 +203,7 @@
     },
     {
       "name": "CIEN_PEER_IP",
-      "label": "Cape Town IP (CIEN VLAN)",
+      "label": "Cape Town IP (CIEN VLAN) (only if Build CIEN)",
       "type": "string",
       "required": false,
       "default": "10.29.1.50",
@@ -203,7 +211,7 @@
     },
     {
       "name": "CIEN_HOST",
-      "label": "CIEN host",
+      "label": "CIEN host (only if Build CIEN)",
       "type": "string",
       "required": false,
       "default": "",
@@ -242,12 +250,28 @@
       "description": "The site is appended: '... (FIU)'. Never rename a live endpoint - a new name makes a second collection."
     },
     {
+      "name": "GLOBUS_CLIENT_ID",
+      "label": "Globus service client ID",
+      "type": "string",
+      "required": false,
+      "default": "",
+      "description": "Client UUID of a Globus Connect Server service credential (app.globus.org > Settings > Developers > your project > Add a service credential). With the secret, the weave writes it to the credential file (mode 0600) and later runs reuse it."
+    },
+    {
+      "name": "GLOBUS_CLIENT_SECRET",
+      "label": "Globus service client secret",
+      "type": "string",
+      "required": false,
+      "default": "",
+      "description": "The secret shown once when the credential is created. Only needed on the first run (or to replace the credential); leave blank afterwards."
+    },
+    {
       "name": "GLOBUS_CREDS_FILE",
       "label": "Globus credential file",
       "type": "string",
       "required": false,
       "default": "",
-      "description": "Blank = globus_creds.env in this weave (GCS service credential, see globus_creds.env.example)"
+      "description": "Where the credential is kept. Blank = globus_creds.env in this weave. Fill it in by hand (see globus_creds.env.example) or let the two fields above write it."
     },
     {
       "name": "GLOBUS_ADMIN",

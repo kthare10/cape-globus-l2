@@ -33,7 +33,7 @@ trap on_stop SIGTERM SIGINT
 
 if [ "$ACTION" = "start" ]; then
     echo "### PROGRESS: === Cape Town Globus Data Path ==="
-    echo "### PROGRESS: Prefix: $SLICE_NAME | sites: ${DTN_SITES:-FIU}"
+    echo "### PROGRESS: Prefix: $SLICE_NAME"
 fi
 
 cd "$SCRIPT_DIR" || exit 1

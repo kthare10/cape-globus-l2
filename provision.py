@@ -34,6 +34,7 @@ import ast
 import ipaddress
 import json
 import os
+import re
 import shlex
 import sys
 
@@ -76,8 +77,20 @@ def parse_users(spec: str) -> dict:
     return out
 
 
+def is_on(v: str) -> bool:
+    return v.strip().lower() in ("true", "1", "yes", "on")
+
+
+def selected_sites() -> list:
+    """DTN_SITES (e.g. FIU,CIEN) wins when set - handy from the shell; otherwise the
+    BUILD_FIU / BUILD_CIEN checkboxes of the weave form (FIU on, CIEN off)."""
+    if env("DTN_SITES"):
+        return [s.strip().upper() for s in env("DTN_SITES").split(",") if s.strip()]
+    return [s for s, dflt in (("FIU", "true"), ("CIEN", "false")) if is_on(env(f"BUILD_{s}", dflt))]
+
+
 def load_config() -> dict:
-    sites = [s.strip().upper() for s in env("DTN_SITES", "FIU").split(",") if s.strip()]
+    sites = selected_sites()
     legs = {}
     for s in sites:
         d = SITE_DEFAULTS.get(s, {})
@@ -140,13 +153,39 @@ def read_creds(path: str) -> dict:
     return vals
 
 
+UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.I)
+
+
+def creds_from_args(cfg: dict) -> None:
+    """GLOBUS_CLIENT_ID + GLOBUS_CLIENT_SECRET, when given, (re)write the credential file
+    (mode 0600) so later runs (status/extend/stop) work without them. The secret is never printed."""
+    cid, secret = env("GLOBUS_CLIENT_ID"), env("GLOBUS_CLIENT_SECRET")
+    if not cid and not secret:
+        return
+    if not (cid and secret):
+        die("set both GLOBUS_CLIENT_ID and GLOBUS_CLIENT_SECRET, or neither (and use GLOBUS_CREDS_FILE)")
+    if not UUID_RE.match(cid):
+        die(f"GLOBUS_CLIENT_ID '{cid}' is not a UUID - use the Client UUID of the service credential")
+    if any(c in secret for c in "\n\r\"' "):
+        die("GLOBUS_CLIENT_SECRET has quotes, spaces or line breaks - paste only the secret")
+    path = cfg["creds"]
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as fh:
+        fh.write("# Written by the weave from GLOBUS_CLIENT_ID / GLOBUS_CLIENT_SECRET. Never commit this file.\n"
+                 f"GCS_CLI_CLIENT_ID={cid}\nGCS_CLI_CLIENT_SECRET={secret}\n")
+    os.chmod(path, 0o600)
+    say(f"Globus service credential {cid} saved to {path} (mode 0600)")
+
+
 def globus_ready(cfg: dict) -> list:
     """Reasons Globus registration cannot run (empty = ready)."""
     why = []
     c = read_creds(cfg["creds"])
     if len(c.get("GCS_CLI_CLIENT_ID", "")) != 36 or not c.get("GCS_CLI_CLIENT_SECRET"):
-        why.append(f"no valid Globus service credential in {cfg['creds']} "
-                   "(copy globus_creds.env.example and fill it in)")
+        why.append(f"no Globus service credential (set GLOBUS_CLIENT_ID and GLOBUS_CLIENT_SECRET, or put it in "
+                   f"{cfg['creds']} - see globus_creds.env.example; create one at app.globus.org > Settings > "
+                   "Developers > your project > Add a service credential for Globus Connect Server)")
     if not cfg["contact"]:
         why.append("GLOBUS_CONTACT_EMAIL is empty")
     if not cfg["users"]:
@@ -542,6 +581,7 @@ def start(prefix: str) -> None:
         leg = cfg["legs"][s]
         if not (leg["l2_fp"] and leg["l2_vlan"] and leg["l2_ip"] and leg["peer_ip"]):
             die(f"{s} needs {s}_L2_FP, {s}_L2_VLAN, {s}_L2_IP and {s}_PEER_IP")
+    creds_from_args(cfg)
     for w in globus_ready(cfg):
         say(f"NOTE — {w}; endpoints will be built but not registered with Globus.")
 

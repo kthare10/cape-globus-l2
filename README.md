@@ -56,13 +56,23 @@ red public line, then green VLAN line.
 |---|---|
 | `<prefix>-fiu`, `<prefix>-cien` | one Rocky 9 DTN each: public NIC, data NIC, GCS, one mapped collection |
 
-`DTN_SITES` picks which sites to build: `FIU` (default, while CIEN is offline), `CIEN`, or `FIU,CIEN`. Each site
-has its own slice, so a failure at one doesn't block the other. Status, extend and stop only touch the listed sites.
+The **Build FIU DTN** and **Build CIEN DTN** checkboxes (`BUILD_FIU`, `BUILD_CIEN`) pick the sites. Only FIU is
+built by default, while CIEN is offline, and the CIEN fields are ignored unless Build CIEN is on. From the shell,
+`DTN_SITES=FIU`, `CIEN` or `FIU,CIEN` overrides the checkboxes. Each site has its own slice, so a failure at one
+doesn't block the other. Status, extend and stop only touch the selected sites.
 
 ## Before you run it
 
-1. **Globus service credential.** At app.globus.org > Settings > Developers, register a service credential for
-   Globus Connect Server. Then `cp globus_creds.env.example globus_creds.env`, `chmod 600` it, and fill it in.
+1. **Globus service credential.** At app.globus.org > Settings > Developers > your project, add a service
+   credential for Globus Connect Server. Copy its client UUID and its secret (shown only once). Then either:
+   - enter them in the **Globus service client ID / secret** fields on the first run. The weave writes them to
+     `globus_creds.env` (mode 0600, gitignored, never printed), and later runs reuse that file, so leave the
+     secret blank after that; or
+   - `cp globus_creds.env.example globus_creds.env`, `chmod 600` it, and fill it in by hand
+     (`GLOBUS_CREDS_FILE` points elsewhere if you keep it outside the weave).
+
+   NOTE: LoomAI keeps a run's args in `weave.json` (`active_run`) while the run is going, so the secret sits there
+   until the run ends. Use the file if that matters to you.
 2. **Args.** Set `GLOBUS_USERS` (`identity=account,...`) and `GLOBUS_CONTACT_EMAIL`. Without them the VMs are still
    built and the path is checked, but no endpoint is registered.
 3. **FIU public address.** AmLight assigned VLAN 3002 on `AmLight-Layer3-FIU`, `67.17.206.72/29` and
